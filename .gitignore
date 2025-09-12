@@ -11,3 +11,4 @@ output.txt
 output.json
 database/__pycache__
 app.log
+.DS_Store
