@@ -51,8 +51,8 @@ def _update_seen_products(
     return seen_products
 
 @tool
-def get_products_tool(
-    keyword: Annotated[str, "Từ khóa tìm kiếm sản phẩm mà nguời dùng cung cấp"],
+def get_services_tool(
+    keyword: Annotated[Optional[str], "Từ khoá của dịch vụ mà khách cung cấp"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
@@ -63,13 +63,9 @@ def get_products_tool(
     Chức năng: Tìm kiếm thông tin sản phẩm. 
 
     Tham số: 
-        - keywords (str): chỉ chứa phần từ khoá cốt lõi là tên hoặc mô tả chính xác của sản phẩm mà người dùng quan tâm.
-        - Ví dụ:
-            - "đèn led bản rẻ nhất"  → chỉ lấy "đèn led"
-            - "bút thử điện mắc nhất"  → chỉ lấy "bút thử điện"
-            - "camera an ninh"  → giữ nguyên "camera an ninh"
+        - keywords (str): chỉ chứa phần từ khoá cốt lõi là tên hoặc mô tả chính xác của dịch vụ mà người dùng quan tâm.
     """
-    logger.info(f"get_products_tool được gọi với keywords: {keyword}")
+    logger.info(f"get_services_tool được gọi với keyword: {keyword}")
     # --- SQL First Approach ---
     try:
         db_result = product_repo.get_product_by_keyword(

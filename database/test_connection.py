@@ -10,7 +10,7 @@ def check_supabase_connection(supabase: Client, test_table: str = None, timeout_
     try:
         start = time.time()
         if test_table:
-            res = supabase.table(test_table).select("*").limit(1).execute()
+            res = supabase.table(test_table).select("id", "capacity").execute()
         else:
             res = supabase.table("products").select("*").limit(1).execute()
             
@@ -24,4 +24,4 @@ def check_supabase_connection(supabase: Client, test_table: str = None, timeout_
         print(f"Supabase connection error: {e}")
         return False
     
-check_supabase_connection(supabase=supabase_client, test_table="qna")
+check_supabase_connection(supabase=supabase_client, test_table="rooms")

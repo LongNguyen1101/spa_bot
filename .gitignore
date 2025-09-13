@@ -12,3 +12,4 @@ output.json
 database/__pycache__
 app.log
 .DS_Store
+.spa_bot

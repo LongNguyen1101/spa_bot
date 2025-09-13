@@ -1,3 +1,4 @@
+from datetime import date, time, timedelta, datetime
 from supabase import Client
 from log.logger_config import setup_logging
 
@@ -262,3 +263,96 @@ class ProductRepo:
         ).execute()
         
         return response.data if response.data else None
+    
+    
+class RoomRepo:
+    def __init__(self, supabase_client: Client):
+        self.supabase_client = supabase_client
+        
+    def get_all_rooms(self) -> list[dict] | None:
+        response = (
+            self.supabase_client.table('rooms')
+            .select("id", "capacity")
+            .execute()
+        )
+        
+        return response.data if response.data else None
+    
+    def get_all_rooms_return_dict(self) -> dict | None:
+        response = (
+            self.supabase_client.table('rooms')
+            .select("id", "capacity")
+            .execute()
+        )
+        
+        if not response.data:
+            return None
+        
+        rooms_dict = {}
+        for data in response.data:
+            rooms_dict[data["id"]] = data["capacity"]
+        
+        return rooms_dict
+    
+    
+class AppointmentRepo:
+    def __init__(self, supabase_client: Client):
+        self.supabase_client = supabase_client
+        
+    def get_overlap_appointments(
+        self, 
+        booking_date_new: date, 
+        start_time_new: time,
+        end_time_new: time,
+        buffer_time: int = 5
+    ) -> list[dict]:
+        # booking_date_new = datetime.strptime(booking_date_new, "%Y-%m-%d").date()
+        # start_time_new = datetime.strptime(start_time_new, "%H:%M:%S").time()
+        # end_time_new = datetime.strptime(end_time_new, "%H:%M:%S").time()
+        buffer = timedelta(minutes=buffer_time)
+        
+         # Tạo datetime giả để cộng buffer
+        dt_start = datetime.combine(booking_date_new, start_time_new)
+        dt_end = datetime.combine(booking_date_new, end_time_new)
+
+        # cộng buffer
+        dt_start_buffered = dt_start - buffer
+        dt_end_buffered = dt_end + buffer
+
+        # lấy lại phần time sau khi buffer
+        start_time_threshold = dt_start_buffered.time()
+        end_time_threshold = dt_end_buffered.time()
+        
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .select("*")
+            .eq("booking_date", booking_date_new)
+            .in_("status", ["booked", "completed"])
+            .lt("start_time", end_time_threshold)
+            .gt("end_time", start_time_threshold)
+            .execute()
+        )
+        
+        return response.data if response.data else None
+    
+
+class StaffRepo:
+    def __init__(self, supabase_client: Client):
+        self.supabase_client = supabase_client
+        
+    def get_all_staff_return_dict(self) -> dict | None:
+        response = (
+            self.supabase_client.table('staff')
+            .select("id", "name")
+            .execute()
+        )
+        
+        if not response.data:
+            return None
+        
+        staff_dict = {}
+        for data in response.data:
+            staff_dict[data["id"]] = data["name"]
+        
+        return staff_dict

@@ -54,7 +54,7 @@ class ModifyOrderAgent:
             content = result["messages"][-1].content
             
             update = {
-                "messages": [AIMessage(content=content, name="product_agent")],
+                "messages": [AIMessage(content=content, name="modify_order_agent")],
                 "next": "__end__"
             }
             
