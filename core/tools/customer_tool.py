@@ -17,9 +17,9 @@ customer_repo = CustomerRepo(supabase_client=supabase_client)
 
 @tool
 def modify_customer_tool(
-    new_phone: Annotated[Optional[str], "Số điện thoại khách muốn thêm vào hoặc cập nhật"],
     new_name: Annotated[Optional[str], "Tên khách muốn thêm vào hoặc cập nhật"],
-    new_address: Annotated[Optional[str], "Địa chỉ khách muốn thêm vào hoặc cập nhật"],
+    new_phone: Annotated[Optional[str], "Số điện thoại khách muốn thêm vào hoặc cập nhật"],
+    new_email: Annotated[Optional[str], "Email khách muốn thêm vào hoặc cập nhật"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
@@ -35,11 +35,11 @@ def modify_customer_tool(
     """
     logger.info("modify_customer_tool được gọi")
     
-    if not any([new_name, new_address, new_phone]):
-        logger.info(f"Khách thiếu ít nhất 1 thông tin Tên: {new_name} | Địa chỉ: {new_address} | Số điện thoại: {new_phone}")
+    if not any([new_name, new_phone]):
+        logger.info(f"Khách thiếu ít nhất 1 thông tin Tên: {new_name} | Số điện thoại: {new_phone}")
         return Command(
             update=build_update(
-                content="Khách phải cung cấp ít nhất một thông tin liên quan đến tên, địa chỉ với số điện thoại để cập nhật, hỏi khách",
+                content="Khách phải cung cấp ít nhất một thông tin liên quan đến tên và số điện thoại để cập nhật, hỏi khách",
                 tool_call_id=tool_call_id
             )
         )
@@ -65,11 +65,11 @@ def modify_customer_tool(
         if new_name:
             update_payload['name'] = new_name
         if new_phone:
-            update_payload['phone_number'] = new_phone
-        if new_address:
-            update_payload['address'] = new_address
+            update_payload['phone'] = new_phone
+        if new_email:
+            update_payload['email'] = new_email
 
-        logger.info(f"Cập nhật thông tin khách tên: {new_name} | SĐT: {new_phone} | địa chỉ: {new_address}")
+        logger.info(f"Cập nhật thông tin khách tên: {new_name} | SĐT: {new_phone} | email: {new_email}")
         updated_info = customer_repo.update_customer_by_customer_id(
             update_payload=update_payload,
             customer_id=state["customer_id"]
@@ -93,10 +93,8 @@ def modify_customer_tool(
                 content=(
                     "Đã cập nhật thông tin khách thành công:\n"
                     f"- Tên khách hàng: {updated_info["name"]}\n"
-                    f"- Số điện thoại khách hàng {updated_info["phone_number"]}\n"
-                    f"- Địa chỉ khách hàng: {updated_info["address"]}\n"
-                    "Nếu khách đang trong quá trình lên đơn thì bạn hãy "
-                    "hỏi là khách có muốn lên đơn luôn không."
+                    f"- Số điện thoại khách hàng {updated_info["phone"]}\n"
+                    f"- Email khách hàng: {updated_info["email"]}\n"
                 ),
                 tool_call_id=tool_call_id,
                 name=updated_info["name"],

@@ -32,7 +32,7 @@ class CustomerRepo:
     
     def get_or_create_customer(self, chat_id: str) -> dict | None:
         response = (
-            self.supabase_client.table("customer")
+            self.supabase_client.table("customers")
             .upsert(
                 {"chat_id": chat_id},
                 on_conflict="chat_id"
@@ -45,8 +45,8 @@ class CustomerRepo:
     def check_customer_id(self, customer_id: int) -> bool:
         response = (
             self.supabase_client.table('customer')
-            .select('customer_id')
-            .eq("customer_id", customer_id)
+            .select('id')
+            .eq("id", customer_id)
             .execute()
         )
         
@@ -60,7 +60,7 @@ class CustomerRepo:
         response = (
             self.supabase_client.table('customer')
             .update(update_payload)
-            .eq('customer_id', customer_id)
+            .eq('id', customer_id)
             .execute()
         )
         
@@ -149,10 +149,10 @@ class OrderRepo:
         )
         return response.data if response.data else None
     
-    def create_order(self, order_payload: dict) -> dict | None:
+    def create_appointment(self, appointment_payload: dict) -> dict | None:
         response = (
-            self.supabase_client.table('orders')
-            .insert(order_payload)
+            self.supabase_client.table('appointments')
+            .insert(appointment_payload)
             .execute()
         )
         
@@ -221,15 +221,19 @@ class OrderRepo:
         
         return response.data[0] if response.data else None
     
-class ProductRepo:
+class ServiceRepo:
     def __init__(self, supabase_client: Client):
         self.supabase_client = supabase_client
         
-    def get_product_by_keyword(self, keyword: str) -> list[dict] | None:
+    def get_service_by_keyword(self, keyword: str) -> list[dict] | None:
+        pattern = f"%{keyword}%"
+
         response = (
-            self.supabase_client.from_("products").select("*")
-            .ilike('product_name', f'%{keyword}%')
-            .limit(5).execute()
+            self.supabase_client
+            .from_("services")
+            .select("*")
+            .or_(f"name.ilike.{pattern},description.ilike.{pattern},type.ilike.{pattern}")
+            .execute()
         )
         
         return response.data if response.data else None
@@ -261,6 +265,17 @@ class ProductRepo:
                 "match_count": match_count
             }
         ).execute()
+        
+        return response.data if response.data else None
+    
+    def get_all_services_without_des(self) -> list[dict]:
+        response = (
+            self.supabase_client
+            .table("services")
+            .select("id, type, name, duration_minutes, price")
+            .order("type")
+            .execute()
+        )
         
         return response.data if response.data else None
     
@@ -336,6 +351,55 @@ class AppointmentRepo:
         
         return response.data if response.data else None
     
+    def create_appointment(self, appointment_payload: dict) -> dict | None:
+        response = (
+            self.supabase_client.table('appointments')
+            .insert(appointment_payload)
+            .execute()
+        )
+        
+        return response.data[0] if response.data else None
+    
+    def create_appointment_services_item_bulk(self, services_to_insert: list[dict]) -> dict | None:
+        response = (
+            self.supabase_client.table('appointment_services')
+            .insert(services_to_insert)
+            .execute()
+        )
+        
+        return response.data[0] if response.data else None
+    
+    def get_appointment_details(self, appointment_id: int) -> dict | None:
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .select("""
+                *,
+                appointment_services (
+                    services (
+                        id,
+                        type,
+                        name,
+                        duration_minutes,
+                        price
+                    )
+                ),
+                staff:staffs!fk_appointments_staff (
+                    id,
+                    name
+                ),
+                room:rooms!fk_appointments_room (
+                    id,
+                    name
+                )
+            """)
+            .eq("id", appointment_id)
+            .single()
+            .execute()
+        )
+
+        return response.data if response.data else None
+    
 
 class StaffRepo:
     def __init__(self, supabase_client: Client):
@@ -343,7 +407,7 @@ class StaffRepo:
         
     def get_all_staff_return_dict(self) -> dict | None:
         response = (
-            self.supabase_client.table('staff')
+            self.supabase_client.table('staffs')
             .select("id", "name")
             .execute()
         )

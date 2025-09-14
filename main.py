@@ -6,27 +6,27 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.graph.build_graph import create_main_graph
 
 from api.v1.routes import router as api_router_v1
-from api.v2.routes import router as api_router_v2
-from api.v3.routes import router as api_router_v3
+# from api.v2.routes import router as api_router_v2
+# from api.v3.routes import router as api_router_v3
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    graph = create_main_graph()
-    app.state.graph = graph
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     # Startup
+#     graph = create_main_graph()
+#     app.state.graph = graph
     
-    # Start cleanup task
-    graph.cleanup_manager.start_cleanup_task()
+#     # Start cleanup task
+#     graph.cleanup_manager.start_cleanup_task()
     
-    yield
+#     yield
     
-    # Shutdown
-    graph.cleanup_manager.stop_cleanup_task()
+#     # Shutdown
+#     graph.cleanup_manager.stop_cleanup_task()
 
 # Create a FastAPI app instance
 app = FastAPI(
     title="Chatbot customer service project", 
-    lifespan=lifespan
+    # lifespan=lifespan
 )
 
 # Add CORS middleware to allow cross-origin requests
@@ -40,8 +40,8 @@ app.add_middleware(
 
 # Include the API router with a prefix
 app.include_router(api_router_v1, prefix="/api/v1")
-app.include_router(api_router_v2, prefix="/api/v2")
-app.include_router(api_router_v3, prefix="/api/v3")
+# app.include_router(api_router_v2, prefix="/api/v2")
+# app.include_router(api_router_v3, prefix="/api/v3")
 
 # Define a root endpoint
 @app.get("/")

@@ -1,31 +1,27 @@
 from langgraph.types import Command
-from langgraph.prebuilt import create_react_agent
+from core.graph.state import AgentState
 from langchain_core.messages import AIMessage
+from langgraph.prebuilt import create_react_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from core.tools import order_toolbox
-from core.graph.state import AgentState
-from database.connection import specialist_llm
+from core.tools import services_toolbox
+from database.connection import specialist_llm 
 
 from log.logger_config import setup_logging
 
 logger = setup_logging(__name__)
 
-
-class OrderAgent:
+class ServiceAgent:
     def __init__(self):
-        with open("core/prompts/order_agent_prompt.md", "r", encoding="utf-8") as f:
+        with open("core/prompts/service_agent_prompt.md", "r", encoding="utf-8") as f:
             system_prompt = f.read()
             
         context = """
         Các thông tin bạn nhận được:
         - Tên của khách hàng customer_name: {name}
-        - SĐT của khách phone_number: {phone_number}
-        - Địa chỉ của khách: {address}
-        - Các sản phẩm khách đã xem seen_products: {seen_products}
-        - Giỏ hàng của khách: {cart}
+        - Các dịch vụ khách đã xem seen_products: {seen_services}
         """
-            
+
         self.prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt + context),
             MessagesPlaceholder(variable_name="messages")
@@ -33,37 +29,33 @@ class OrderAgent:
         
         self.agent = create_react_agent(
             model=specialist_llm,
-            tools=order_toolbox,
+            tools=services_toolbox,
             prompt=self.prompt,
             state_schema=AgentState
         )
-    
-    def order_agent_node(self, state: AgentState) -> Command:
+
+    def services_agent_node(self, state: AgentState) -> Command:
         """
-        Xử lý các yêu cầu liên quan đến đơn hàng (lên đơn, cập nhật, hủy, ...) bằng `order_toolbox`.
+        Xử lý các yêu cầu liên quan đến sản phẩm bằng công cụ `product_toolbox`.
 
         Args:
             state (AgentState): Trạng thái hội thoại hiện tại.
 
         Returns:
-            Command: Lệnh cập nhật `messages`, các trường trạng thái (`order`, `cart`, ... nếu có) và kết thúc luồng.
+            Command: Lệnh cập nhật `messages`, `seen_products` (nếu có) và kết thúc luồng.
         """
         try:
             result = self.agent.invoke(state)
             content = result["messages"][-1].content
             
             update = {
-                "messages": [AIMessage(content=content, name="order_agent")],
+                "messages": [AIMessage(content=content, name="services_agent_node")],
                 "next": "__end__"
             }
             
-            for key in ([
-                "customer_id", "name", "phone_number", "order",
-                "address", "seen_products", "cart", "grand_total"
-            ]):
-                if result.get(key, None) is not None:
-                    update[key] = result[key]
-            
+            if result.get("seen_services", None) is not None:
+                    update["seen_services"] = result["seen_services"]
+                            
             return Command(
                 update=update,
                 goto="__end__"

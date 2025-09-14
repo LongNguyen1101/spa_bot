@@ -15,8 +15,11 @@ logger = setup_logging(__name__)
 
 class Route(BaseModel):
     """Chọn agent tiếp theo để xử lý yêu cầu."""
-    next: Literal["product_agent", "order_agent", "modify_order_agent","__end__"] = Field(
-        description="Chọn 'product_agent' cho các câu hỏi về sản phẩm, 'order_agent' cho các tác vụ liên quan đến đơn hàng, 'modify_order_agent' cho các tác vụ liên quan đến thay đổi đơn hàng, thông tin khách hàng và '__end__' để kết thúc."
+    next: Literal["service_agent", "booking_agent","__end__"] = Field(
+        description=(
+            "Chọn 'service_agent' cho các câu hỏi về dịch vụ, "
+            "'booking_agent' cho các tác vụ liên quan đến lên lịch đặt"
+        )
     )
 
 class Supervisor:
@@ -26,8 +29,8 @@ class Supervisor:
             
         context = (
             "Các thông tin bạn nhận được:\n"
-            "- Đơn hàng của khách: {order}\n"
-            "- Giỏ hàng của khách: {cart}"
+            "- Lịch khách đã đặt thành công: {book_info}\n"
+            "- Các dịch vụ khách chọn: {services}"
         )
             
         self.prompt = ChatPromptTemplate.from_messages([
@@ -62,17 +65,17 @@ class Supervisor:
                     logger.error("Lỗi không lấy được thông tin khách")
                 else:
                     update.update({
-                        "customer_id": customer.get("customer_id"),
+                        "customer_id": customer.get("id"),
                         "name": customer.get("name"),
-                        "phone_number": customer.get("phone_number"),
-                        "address": customer.get("address")
+                        "phone_number": customer.get("phone"),
+                        "emai": customer.get("email")
                     })
             else:
                 logger.info(
                     "Thông tin của khách: "
                     f"- Tên: {state["name"]} | "
-                    f"- Số điện thoại: {state["phone_number"]} | "
-                    f"- Địa chỉ: {state["address"]}"
+                    f"- Số điện thoại: {state["phone"]} | "
+                    f"- Email: {state["email"]}"
                 )
             
             logger.info(f"Yêu cầu của khách: {state["user_input"]}")

@@ -7,8 +7,8 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from core.graph.state import AgentState
 from core.graph.supervisor import Supervisor
-from core.graph.order_agent import OrderAgent
-from core.graph.product_agent import ProductAgent
+from core.graph.booking_agent import BookingAgent
+from core.graph.services_agent import ServiceAgent
 from core.graph.modify_order_agent import ModifyOrderAgent
 from state_management.state_cleanup_manager import StateCleanupManager
 
@@ -25,8 +25,8 @@ STATE_TTL_MINUTES = os.getenv("STATE_TTL_MINUTES")
 
 def create_main_graph() -> StateGraph:
     # Khởi tạo các agent
-    product_agent = ProductAgent()
-    order_agent = OrderAgent()
+    service_agent = ServiceAgent()
+    booking_agent = BookingAgent()
     modify_order_agent = ModifyOrderAgent()
     supervisor_chain = Supervisor()
 
@@ -38,13 +38,13 @@ def create_main_graph() -> StateGraph:
         # retry=retry_policy
     )
     workflow.add_node(
-        "product_agent", 
-        product_agent.product_agent_node,
+        "service_agent", 
+        service_agent.product_agent_node,
         # retry=retry_policy
     )
     workflow.add_node(
-        "order_agent", 
-        order_agent.order_agent_node,
+        "booking_agent", 
+        booking_agent.booking_agent_node,
         # retry=retry_policy
     )
     workflow.add_node(
@@ -55,24 +55,24 @@ def create_main_graph() -> StateGraph:
 
     workflow.set_entry_point("supervisor")
     
-    workflow.add_edge("supervisor", "product_agent")
-    workflow.add_edge("supervisor", "order_agent")
-    workflow.add_edge("supervisor", "modify_order_agent")
+    workflow.add_edge("supervisor", "service_agent")
+    workflow.add_edge("supervisor", "booking_agent")
+    # workflow.add_edge("supervisor", "modify_order_agent")
     
-    workflow.add_edge("product_agent", END)
-    workflow.add_edge("order_agent", END)
-    workflow.add_edge("modify_order_agent", END)
+    workflow.add_edge("service_agent", END)
+    workflow.add_edge("booking_agent", END)
+    # workflow.add_edge("modify_order_agent", END)
     
     memory = MemorySaver()
     graph = workflow.compile(checkpointer=memory)
     
     # Khởi tạo cleanup manager
-    cleanup_manager = StateCleanupManager(
-        graph=graph,
-        cleanup_interval_minutes=CLEANUP_INTERVAL_MINUTES, # Chạy cleanup mỗi 30 phút
-        state_ttl_minutes=STATE_TTL_MINUTES # State sống 2 tiếng
-    )
+    # cleanup_manager = StateCleanupManager(
+    #     graph=graph,
+    #     cleanup_interval_minutes=CLEANUP_INTERVAL_MINUTES, # Chạy cleanup mỗi 30 phút
+    #     state_ttl_minutes=STATE_TTL_MINUTES # State sống 2 tiếng
+    # )
     
-    graph.cleanup_manager = cleanup_manager
+    # graph.cleanup_manager = cleanup_manager
 
     return graph
