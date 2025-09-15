@@ -46,7 +46,7 @@ def _update_seen_services(
 
 @tool
 def get_services_tool(
-    keyword: Annotated[Optional[str], "Từ khoá của dịch vụ mà khách cung cấp"],
+    keyword: Annotated[str, "Từ khoá của dịch vụ mà khách cung cấp"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
@@ -71,7 +71,7 @@ def get_services_tool(
         if db_result:
             logger.info("Có dữ liệu trả về từ SQL")
             
-            updated_seen_products = _update_seen_services(
+            updated_seen_services = _update_seen_services(
                 seen_products=state["seen_services"] if state["seen_services"] is not None else {},
                 services=db_result
             )
@@ -79,113 +79,94 @@ def get_services_tool(
             formatted_response = (
                 "Đây là các dịch vụ tìm thấy dựa trên yêu cầu của khách:\n"
                 f"{db_result}\n"
-                "Tóm gọn lại thông tin dịch vụ một cách ngắn gọn, khoa học và dễ hiểu "
-                "nhưng khách vẫn nắm được các ý chính\n"
             )
-            
-            if state["phone_number"]:
-                formatted_response += "Khách đã có số điện thoại, hỏi khách có muốn mua sản phẩm không"
-            else:
-                formatted_response += "Khách chưa có số điện thoại, xin số điện thoại của khách"
             
             logger.info("Trả về kết quả từ SQL")
             return Command(
                 update=build_update(
                     content=formatted_response,
                     tool_call_id=tool_call_id,
-                    seen_products=updated_seen_products
+                    seen_services=updated_seen_services
                 )
             )
             
         logger.info("Không có kết quả từ SQL, chuyển sang tìm kiếm RAG")
         
-        # query_embedding = embeddings_model.embed_query(state["user_input"])
+        query_embedding = embeddings_model.embed_query(state["user_input"])
         
-        # rag_results = product_repo.get_product_by_embedding(
-        #     query_embedding=query_embedding,
-        #     match_count=5
-        # )
+        rag_results = service_repo.get_services_by_embedding(
+            query_embedding=query_embedding,
+            match_count=5
+        )
         
-        # # logger.info(f"Kết quả RAG: {rag_results}")
+        logger.info(f"Kết quả RAG: {rag_results}")
         
-        # if not rag_results:
-        #     logger.info("Không có kết quả từ RAG")
-        #     return Command(update=build_update(
-        #         content="Xin lỗi, tôi không tìm thấy thông tin nào liên quan đến câu hỏi của bạn.",
-        #         tool_call_id=tool_call_id
-        #     ))
+        if not rag_results:
+            logger.info("Không có kết quả từ RAG")
+            return Command(update=build_update(
+                content="Xin lỗi khách, cửa hàng không có dịch vụ mà khách muốn",
+                tool_call_id=tool_call_id
+            ))
 
-        # logger.info("Có kết quả trả về từ RAG")
-        # products = [json.loads(item.get("content")) for item in rag_results if item.get("content")]
+        logger.info("Có kết quả trả về từ RAG")
+        services = [json.loads(item.get("content")) for item in rag_results]
         
-        # if not products:
-        #     logger.info("Không thể parse sản phẩm từ kết quả RAG")
-        #     return Command(update=build_update(
-        #         content="Xin lỗi, tôi không thể xác định được sản phẩm từ kết quả tìm kiếm.",
-        #         tool_call_id=tool_call_id
-        #     ))
+        if not services:
+            logger.info("Không thể parse dịch vụ từ kết quả json RAG")
+            return Command(update=build_update(
+                content="Xin lỗi khách, có lỗi trong quá trình tìm kiếm dịch vụ",
+                tool_call_id=tool_call_id
+            ))
 
         
-        # updated_seen_products = _update_seen_products(
-        #     seen_products=state["seen_products"] if state["seen_products"] is not None else {}, 
-        #     products=products
-        # )
-        # formatted_response = (
-        #     "Đây là các sản phẩm được trả về dựa trên yêu cầu của khách:\n\n"
-        #     f"{products}\n"
-        #     "Tóm gọn lại thông tin sản phẩm một cách ngắn gọn và dễ hiểu."
-        # )
+        updated_seen_services = _update_seen_services(
+            seen_products=state["seen_services"] if state["seen_services"] is not None else {},
+            services=services
+        )
         
-        # logger.info("Trả về kết quả từ RAG")
-        # return Command(
-        #     update=build_update(
-        #         content=formatted_response,
-        #         tool_call_id=tool_call_id,
-        #         seen_products=updated_seen_products
-        #     )
-        # )
+        formatted_response = (
+            "Đây là các dịch vụ được trả về dựa trên yêu cầu của khách:\n\n"
+            f"{services}\n"
+        )
+        
+        logger.info("Trả về kết quả từ RAG")
+        return Command(
+            update=build_update(
+                content=formatted_response,
+                tool_call_id=tool_call_id,
+                seen_services=updated_seen_services
+            )
+        )
 
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
 
 @tool
-def get_all_services_tool(
-    state: Annotated[AgentState, InjectedState],
+def get_spa_info_tool(
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
     """
-    Sử dụng tool này để lấy các dịch vụ mà spa cung cấp
+    Sử dụng tool này để lấy các thông tin của cửa hàng Spa như dịch vụ cung cấp hay thông tin chung
     """
-    logger.info(f"get_all_services_tool được gọi")
+    logger.info(f"get_spa_info_tool được gọi")
+    
     try:
-        all_service = service_repo.get_all_services_without_des()
-        
-        updated_seen_products = _update_seen_services(
-            seen_products=state["seen_services"] if state["seen_services"] is not None else {},
-            services=all_service
-        )
+        with open("core/prompts/spa_info.md", "r", encoding="utf-8") as f:
+            spa_info = f.read()
         
         return Command(
-            build_update(
+            update=build_update(
                 content=(
-                    "Đây là danh sách các dịch vụ và spa cung cấp:\n"
-                    f"{all_service}\n"
-                    "Hãy viết các dịch vụ trên 1 dòng, cách nhau bằng dấu ,"
-                    "và phân chia theo giới tính"
+                    "Đây là thông tin của spa:\n"
+                    f"{spa_info}"
                 ),
-                tool_call_id=tool_call_id,
-                seen_services=updated_seen_products
+                tool_call_id=tool_call_id
             )
         )
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
-
-
-
-
-
 
 
 

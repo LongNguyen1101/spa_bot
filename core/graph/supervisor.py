@@ -29,8 +29,8 @@ class Supervisor:
             
         context = (
             "Các thông tin bạn nhận được:\n"
-            "- Lịch khách đã đặt thành công: {book_info}\n"
-            "- Các dịch vụ khách chọn: {services}"
+            "- Các dịch vụ khách chọn: {services}\n"
+            "- Lịch khách đã đặt thành công: {book_info}"
         )
             
         self.prompt = ChatPromptTemplate.from_messages([

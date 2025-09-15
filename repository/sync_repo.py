@@ -1,4 +1,5 @@
 from datetime import date, time, timedelta, datetime
+import json
 from supabase import Client
 from log.logger_config import setup_logging
 
@@ -238,20 +239,32 @@ class ServiceRepo:
         
         return response.data if response.data else None
     
-    def get_product_by_embedding(
+    def get_services_by_embedding(
         self, 
         query_embedding: list[float],
         match_count: int = 5
     ) -> list[dict] | None:
         response = self.supabase_client.rpc(
-            "match_product_descriptions",
+            "match_services_embedding",
             {
-                "query_embedding_input": query_embedding, 
-                "match_count": match_count
+                "query_embedding": query_embedding, 
+                "match_count": match_count,
+                "filter": {}
             }
         ).execute()
         
-        return response.data if response.data else None
+        if not response.data:
+            return None
+
+        results = [
+            {
+                "similarity": data["similarity"],
+                "content": json.loads(data['content'])
+            }
+            for data in response.data
+        ]
+        
+        return results
     
     def get_qna_by_embedding(
         self, 

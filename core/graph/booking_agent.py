@@ -14,13 +14,13 @@ logger = setup_logging(__name__)
 
 class BookingAgent:
     def __init__(self):
-        with open("core/prompts/order_agent_prompt.md", "r", encoding="utf-8") as f:
+        with open("core/prompts/booking_agent_prompt.md", "r", encoding="utf-8") as f:
             system_prompt = f.read()
             
         context = """
         Các thông tin bạn nhận được:
         - Tên của khách hàng customer_name: {name}
-        - SĐT của khách phone: {phone_number}
+        - SĐT của khách phone: {phone}
         - Email của khách: {email}
         - Các dịch vụ khách đã xem seen_products: {seen_services}
         - Các dịch vụ khách đã chọn: {services}

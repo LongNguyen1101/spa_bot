@@ -9,7 +9,7 @@ from core.graph.state import AgentState
 from core.graph.supervisor import Supervisor
 from core.graph.booking_agent import BookingAgent
 from core.graph.services_agent import ServiceAgent
-from core.graph.modify_order_agent import ModifyOrderAgent
+# from core.graph.modify_order_agent import ModifyOrderAgent
 from state_management.state_cleanup_manager import StateCleanupManager
 
 load_dotenv()
@@ -27,7 +27,7 @@ def create_main_graph() -> StateGraph:
     # Khởi tạo các agent
     service_agent = ServiceAgent()
     booking_agent = BookingAgent()
-    modify_order_agent = ModifyOrderAgent()
+    # modify_order_agent = ModifyOrderAgent()
     supervisor_chain = Supervisor()
 
     # Xây dựng graph
@@ -39,7 +39,7 @@ def create_main_graph() -> StateGraph:
     )
     workflow.add_node(
         "service_agent", 
-        service_agent.product_agent_node,
+        service_agent.services_agent_node,
         # retry=retry_policy
     )
     workflow.add_node(
@@ -47,11 +47,11 @@ def create_main_graph() -> StateGraph:
         booking_agent.booking_agent_node,
         # retry=retry_policy
     )
-    workflow.add_node(
-        "modify_order_agent", 
-        modify_order_agent.modify_order_agent_node,
-        # retry=retry_policy
-    )
+    # workflow.add_node(
+    #     "modify_order_agent", 
+    #     modify_order_agent.modify_order_agent_node,
+    #     # retry=retry_policy
+    # )
 
     workflow.set_entry_point("supervisor")
     

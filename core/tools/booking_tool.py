@@ -1,5 +1,3 @@
-from curses.panel import top_panel
-from readline import append_history_file
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
@@ -7,11 +5,9 @@ from langchain_core.tools import tool, InjectedToolCallId
 from typing import Optional, Annotated
 from datetime import date, time, timedelta, datetime
 
-from sqlalchemy import over
-
-from core.graph.state import AgentState, Services
 from core.utils.function import build_update
 from database.connection import supabase_client
+from core.graph.state import AgentState, Services
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 
 from log.logger_config import setup_logging
@@ -201,13 +197,17 @@ def add_service_tool(
 
 @tool
 def check_available_booking_tool(
-    booking_date_new: Annotated[Optional[date], "Ngày tháng năm khách đặt lịch"],
-    start_time_new: Annotated[Optional[time], "Thời gian khách muốn đặt lịch"],
+    booking_date_new: Annotated[Optional[str], "Ngày tháng năm khách đặt lịch"],
+    start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ):
     """
     Sử dụng tool này để kiểm tra ngày đặt và thời gian đặt của khách có còn lịch trống không
+    
+    Args:
+        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%d-%m-%Y", bạn bắt buộc phải tuân theo định dạng này.
+        - start_time_new (str | None): Giờ phút giây mà khách đặt, có định dạng "%H:%M:%S", bạn bắt buộc phải tuân theo định dạng này.
     """
     logger.info(f"check_available_booking được gọi")
     
@@ -236,6 +236,9 @@ def check_available_booking_tool(
         
     try:
         logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
+        
+        booking_date_new = datetime.strptime(booking_date_new, "%d-%m-%Y").date()
+        start_time_new = datetime.strptime(start_time_new, "%H:%M:%S").time()
 
         # Calculate end time
         dt_start = datetime.combine(booking_date_new, start_time_new)
