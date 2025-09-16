@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph
 from langchain_core.messages import ToolMessage
 from langchain_core.messages import AIMessage, HumanMessage
 
-from core.graph.state import AgentState
+from core.graph.state import AgentState, Room
 from repository.sync_repo import CustomerRepo
 from database.connection import supabase_client
 from core.graph.state import AgentState, BookInfo, Customer, Services, Staff
@@ -185,7 +185,7 @@ def date_to_str(d):
         return d
     raise TypeError(f"Unsupported date type: {type(d)}")
 
-def return_appoointments(appointment_details: dict) -> str:
+def return_appointments(appointment_details: dict) -> str:
     index = 1
     if appointment_details["customer"]["email"]:
         email = appointment_details["customer"]["email"]
@@ -221,12 +221,7 @@ def return_appoointments(appointment_details: dict) -> str:
     
     return service_detail
 
-def update_book_info(
-    appointment_details: dict
-) -> BookInfo:
-    if book_info is not None:
-        book_info = {}
-        
+def update_book_info(appointment_details: dict) -> BookInfo:
     booked_services = {}
     for service in appointment_details["appointment_services"]:
         service = service["services"]
@@ -257,6 +252,10 @@ def update_book_info(
         staff=Staff(
             staff_id=appointment_details["staff"]["id"],
             name=appointment_details["staff"]["name"]
+        ),
+        room=Room(
+            room_id=appointment_details["room"]["id"],
+            room_name=appointment_details["room"]["name"]
         )
     )
     

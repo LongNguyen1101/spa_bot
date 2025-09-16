@@ -9,7 +9,7 @@ from database.connection import supabase_client
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
     build_update, 
-    return_appoointments,
+    return_appointments,
     update_book_info
 )
 
@@ -143,7 +143,7 @@ def get_all_editable_booking(
             
             formatted_appointments += (
                 f"Đơn thứ {index}:\n"
-                f"{return_appoointments(appointment_details=booked)}\n\n"
+                f"{return_appointments(appointment_details=booked)}\n\n"
             )
             
             index += 1

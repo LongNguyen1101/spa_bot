@@ -12,7 +12,7 @@ from core.utils.function import (
     build_update, 
     time_to_str, 
     date_to_str,
-    return_appoointments,
+    return_appointments,
     update_book_info
 )
 
@@ -317,7 +317,7 @@ def create_appointment_tool(
             appointment_id=new_appointment_id
         )
         
-        booking_detail = return_appoointments(
+        booking_detail = return_appointments(
             appointment_details=appointment_details
         )
         
