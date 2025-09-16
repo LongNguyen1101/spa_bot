@@ -58,11 +58,11 @@ class BookingAgent:
                 "next": "__end__"
             }
             
-            for key in ([
+            for key in [
                 "customer_id", "name", "phone", "email", "booking_date",
                 "start_time", "end_time", "room_id", "room_name", "staff_id", "staff_name",
                 "book_info", "seen_services", "services", "total_price", "total_time"
-            ]):
+            ]:
                 if result.get(key, None) is not None:
                     update[key] = result[key]
             

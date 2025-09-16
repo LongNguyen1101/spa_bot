@@ -1,3 +1,4 @@
+from flask import app
 from langgraph.graph.message import add_messages
 
 from datetime import timedelta, date, time
@@ -17,6 +18,34 @@ class Services(TypedDict):
     service_name: str
     duration_minutes: int
     price: int
+
+class Customer(TypedDict):
+    customer_id: int
+    name: str
+    phone: str
+    email: str
+
+class Staff(TypedDict):
+    staff_id: int
+    name: str
+    
+class Room(TypedDict):
+    room_id: int
+    room_name: str
+
+class BookInfo(TypedDict):
+    appointment_id: int
+    booking_date: str
+    start_time: str
+    end_time: str
+    status: str
+    total_price: int
+    create_date: str
+
+    services: dict[int, Services]
+    customer: Customer
+    staff: Staff
+    room: Room
 
 class AgentState(Origin_AgentState):
     messages: Annotated[list, add_messages]
@@ -43,7 +72,7 @@ class AgentState(Origin_AgentState):
     total_time: Annotated[Optional[int], _remain_value]
     
     total_price: Annotated[Optional[int], _remain_value]
-    book_info: Annotated[Optional[dict], _remain_dict]
+    book_info: Annotated[Optional[dict[int, BookInfo]], _remain_dict]
     
     
 def init_state() -> AgentState:

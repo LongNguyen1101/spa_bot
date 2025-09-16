@@ -2,13 +2,19 @@ from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
 
-from typing import Optional, Annotated
+from typing import Optional, Annotated, Literal
 from datetime import date, time, timedelta, datetime
 
+from core.graph.state import AgentState
 from database.connection import supabase_client
-from core.graph.state import AgentState, Services
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
-from core.utils.function import build_update, time_to_str, date_to_str
+from core.utils.function import (
+    build_update, 
+    time_to_str, 
+    date_to_str,
+    return_appoointments,
+    update_book_info
+)
 
 from log.logger_config import setup_logging
 
@@ -18,93 +24,6 @@ appointment_repo = AppointmentRepo(supabase_client=supabase_client)
 room_repo = RoomRepo(supabase_client=supabase_client)
 staff_repo = StaffRepo(supabase_client=supabase_client)
 
-def _return_selective_services(
-    services: dict,
-    total_time: int,
-    total_price: int
-) -> str:
-    index = 1
-    service_detail = ""
-    
-    for service_key in services.keys():
-        service_detail += (
-            f"STT: {index}\n"
-            f"Loại dịch vụ: {services[service_key]["service_type"]}\n"
-            f"Tên dịch vụ: {services[service_key]["service_name"]}\n"
-            f"Thời gian: {services[service_key]["duration_minutes"]}\n"
-            f"Giá: {services[service_key]["price"]}\n"
-        )
-        
-        index += 1
-        
-    service_detail += (
-        f"Tổng thời gian: {total_time}\n"
-        f"Tổng giá tiền: {total_price}\n"
-    )
-    
-    return service_detail
-
-def _return_appoointments(
-    appointment_details: dict
-) -> str:
-    index = 1
-    if appointment_details["customer"]["email"]:
-        email = appointment_details["customer"]["email"]
-    else:
-        email = "Không có"
-        
-    service_detail = (
-        f"Thời gian đặt: {appointment_details["booking_date"]}\n"
-        f"Thơi gian bắt đầu: {appointment_details["start_time"]}\n"
-        f"Thời gian kết thúc: {appointment_details["end_time"]}\n\n"
-        f"Tên khách: {appointment_details["customer"]["name"]}\n"
-        f"SĐT khách: {appointment_details["customer"]["phone"]}\n"
-        f"Email khách: {email}\n\n"
-        f"Nhân viên thực hiện: {appointment_details["staff"]["name"]}\n"
-        f"Phòng: {appointment_details["room"]["name"]}\n\n"
-        "Các dịch vụ khách đã đăng ký:\n"
-    )
-    
-    for service in appointment_details["appointment_services"]:
-        service_detail += (
-            f"STT: {index}\n"
-            f"Loại dịch vụ: {service["services"]["type"]}\n"
-            f"Tên dịch vụ: {service["services"]["name"]}\n"
-            f"Thời gian: {service["services"]["duration_minutes"]}\n"
-            f"Giá: {service["services"]["price"]}\n"
-        )
-        
-        index += 1
-    
-    service_detail += (
-        f"\nTổng giá tiền: {appointment_details["total_price"]}\n"
-    )
-    
-    return service_detail
-
-
-def _update_services_state(
-    services_state: dict,
-    seen_services: dict,
-    service_id_list: list[dict]
-) -> tuple[dict, int, int]:
-    total_time = 0
-    total_price = 0
-    
-    for id in service_id_list:
-        services_state[id] = Services(
-            service_id=id,
-            service_type=seen_services[id]["service_type"],
-            service_name=seen_services[id]["service_name"],
-            duration_minutes=seen_services[id]["duration_minutes"],
-            price=seen_services[id]["price"],
-        )
-        
-        total_time += seen_services[id]["duration_minutes"]
-        total_price += seen_services[id]["price"]
-    
-    return services_state, total_time, total_price
-    
 
 def _check_available_time_without_total_time(
     booking_date: date,
@@ -144,67 +63,66 @@ def _check_available_with_end_time(
             del staffs[appointment["staff_id"]]
             
     return rooms, staffs
-    
+
 @tool
-def add_service_tool(
-    service_id_list: Annotated[Optional[list[int]], (
-        "Đây là danh sách các id của các dịch vụ mà khách chọn, "
-        "được lấy trong danh sách seen_services"
+def resolve_weekday_to_date_tool(
+    weekday: Annotated[Literal["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], (
+        "Thứ trong tuần mà khách muốn đặt lịch"
     )],
-    state: Annotated[AgentState, InjectedState],
+    next_week: Annotated[Literal[1, 2, 3], (
+        "Số tuần tiếp theo (hoặc hiện tại) mà khách muốn đặt lịch"
+    )],
     tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command:
+):
     """
-    Sử dụng tool này để lưu lại các dịch vụ mà khách chọn 
-    """
-    logger.info(f"add_service_tool được gọi")
+    Sử dụng tool này để chuyển đổi từ thứ trong tuần sang ngày tháng năm cụ thể
     
-    if not service_id_list:
-        logger.info("Không xác định được dịch vụ khách chọn")
-        return Command(
-            update=build_update(
-                content=(
-                    "Không biết khách chọn dịch vụ nào, hỏi lại khách"
-                ),
-                tool_call_id=tool_call_id
-            )
+    Args:
+        - weekday (str): Thứ trong tuần mà khách muốn đặt lịch, bắt buộc 1 trong các từ "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+        - next_week (int): Số tuần tiếp theo (hoặc hiện tại) mà khách muốn đặt lịch. 
+        Nếu khách muốn đặt trong tuần hiện tại, thì next_week là 1.
+        Nếu khách muốn đặt vào tuần sau, thì next_week là 2.
+        Nếu khách muốn đặt vào tuần kế tiếp nữa, thì next_week là 3.
+    """
+    
+    # map tên ngày sang số tuần theo Python datetime.weekday(): Monday=0 .. Sunday=6
+    name_to_weekday = {
+        "Monday": 0,
+        "Tuesday": 1,
+        "Wednesday": 2,
+        "Thursday": 3,
+        "Friday": 4,
+        "Saturday": 5,
+        "Sunday": 6
+    }
+
+    # kiểm tra weekday hợp lệ
+    wd = name_to_weekday.get(weekday)
+    if wd is None:
+        raise ValueError(f"Invalid weekday name: {weekday}")
+
+    reference_date = date.today()
+    # tìm weekday của reference_date
+    ref_wd = reference_date.weekday()  # 0..6
+
+    days_until = (wd - ref_wd) % 7
+    
+    additional_weeks = next_week - 1
+    total_days = days_until + additional_weeks * 7
+
+    target_date = reference_date + timedelta(days=total_days)
+    
+    return Command(
+        update=build_update(
+            content=f"Ngày khách đặt: {target_date.isoformat()}",
+            tool_call_id=tool_call_id
         )
-        
-    try:
-        services_state, total_time, total_price = _update_services_state(
-            services_state=state["services"] if state["services"] else {},
-            seen_services=state["seen_services"],
-            service_id_list=service_id_list
-        )
-        
-        logger.info("Thêm dịch vụ khách chọn vào state thành công")
-        
-        service_detail = _return_selective_services(
-            services=services_state,
-            total_time=state["total_time"] + total_time if state["total_time"] is not None else total_time,
-            total_price=state["total_price"] + total_price if state["total_price"] is not None else total_price
-        )
-        
-        return Command(
-            update=build_update(
-                content=(
-                    "Đây là thông tin các dịch vụ mà khách chọn:\n"
-                    f"{service_detail}\n"
-                ),
-                tool_call_id=tool_call_id,
-                services=services_state,
-                total_time=total_time,
-                total_price=total_price
-            )
-        )
-        
-    except Exception as e:
-        logger.error(f"Lỗi: {e}")
-        raise
+    )
+
 
 @tool
 def check_available_booking_tool(
-    booking_date_new: Annotated[Optional[str], "Ngày tháng năm khách đặt lịch"],
+    booking_date_new: Annotated[Optional[str], "Ngày tháng năm cụ thể khách đặt lịch"],
     start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
@@ -213,7 +131,7 @@ def check_available_booking_tool(
     Sử dụng tool này để kiểm tra ngày đặt và thời gian đặt của khách có còn lịch trống không
     
     Args:
-        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%d-%m-%Y", bạn bắt buộc phải tuân theo định dạng này, dựa vào current_date để lấy ra ngày mà khách muốn đặt.
+        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%Y-%m-%d", bạn bắt buộc phải tuân theo định dạng này, dựa vào current_date để lấy ra ngày mà khách muốn đặt.
         - start_time_new (str | None): Giờ phút giây mà khách đặt, có định dạng "%H:%M:%S", bạn bắt buộc phải tuân theo định dạng này.
     """
     logger.info(f"check_available_booking được gọi")
@@ -228,7 +146,7 @@ def check_available_booking_tool(
                 tool_call_id=tool_call_id
             )
         )
-    booking_date_new = datetime.strptime(booking_date_new, "%d-%m-%Y").date()
+    booking_date_new = datetime.strptime(booking_date_new, "%Y-%m-%d").date()
     
     if not start_time_new:
         logger.info("Không xác định được thời gian khách đặt")
@@ -307,7 +225,7 @@ def create_appointment_tool(
     
     services = state["services"].copy()
     if not services:
-        logger.info("Sẻvices rỗng")
+        logger.info("Services rỗng")
         return Command(
             update=build_update(
                 content="Khách chưa chọn dịch vụ nào, hỏi khách",
@@ -399,20 +317,22 @@ def create_appointment_tool(
             appointment_id=new_appointment_id
         )
         
-        order_detail = _return_appoointments(
+        booking_detail = return_appoointments(
             appointment_details=appointment_details
         )
         
+        book_info = state["book_info"].copy() if state["book_info"] else {}
+        book_info[appointment_details["id"]] = update_book_info(
+            appointment_details=appointment_details
+        )
         
-        book_info = state["book_info"].copy() if state["book_info"] is not None else {}
-        book_info[new_appointment_id] = appointment_details
+        logger.info("Đặt lịch thành công")
         
-        logger.info("Lên đơn thành công")
         return Command(
             update=build_update(
                 content=(
                     "Đặt lịch cho khách thành công, đây là chi tiết đặt lịch của khách:\n"
-                    f"{order_detail}\n"
+                    f"{booking_detail}\n"
                 ),
                 tool_call_id=tool_call_id,
                 book_info=book_info,
@@ -424,10 +344,3 @@ def create_appointment_tool(
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
-    
-# @tool
-# def cancel_booking_tool(
-#     state: Annotated[AgentState, InjectedState],
-#     tool_call_id: Annotated[str, InjectedToolCallId]
-# ) -> Command:
-#     pass

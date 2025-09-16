@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from core.graph.state import AgentState
 from repository.sync_repo import CustomerRepo
 from database.connection import supabase_client
+from core.graph.state import AgentState, BookInfo, Customer, Services, Staff
 
 from log.logger_config import setup_logging
 
@@ -183,3 +184,80 @@ def date_to_str(d):
     if isinstance(d, str):
         return d
     raise TypeError(f"Unsupported date type: {type(d)}")
+
+def return_appoointments(appointment_details: dict) -> str:
+    index = 1
+    if appointment_details["customer"]["email"]:
+        email = appointment_details["customer"]["email"]
+    else:
+        email = "Không có"
+        
+    service_detail = (
+        f"Thời gian đặt: {appointment_details["booking_date"]}\n"
+        f"Thơi gian bắt đầu: {appointment_details["start_time"]}\n"
+        f"Thời gian kết thúc: {appointment_details["end_time"]}\n\n"
+        f"Tên khách: {appointment_details["customer"]["name"]}\n"
+        f"SĐT khách: {appointment_details["customer"]["phone"]}\n"
+        f"Email khách: {email}\n\n"
+        f"Nhân viên thực hiện: {appointment_details["staff"]["name"]}\n"
+        f"Phòng: {appointment_details["room"]["name"]}\n\n"
+        "Các dịch vụ khách đã đăng ký:\n"
+    )
+    
+    for service in appointment_details["appointment_services"]:
+        service_detail += (
+            f"STT: {index}\n"
+            f"Loại dịch vụ: {service["services"]["type"]}\n"
+            f"Tên dịch vụ: {service["services"]["name"]}\n"
+            f"Thời gian: {service["services"]["duration_minutes"]}\n"
+            f"Giá: {service["services"]["price"]}\n"
+        )
+        
+        index += 1
+    
+    service_detail += (
+        f"\nTổng giá tiền: {appointment_details["total_price"]}\n"
+    )
+    
+    return service_detail
+
+def update_book_info(
+    appointment_details: dict
+) -> BookInfo:
+    if book_info is not None:
+        book_info = {}
+        
+    booked_services = {}
+    for service in appointment_details["appointment_services"]:
+        service = service["services"]
+        booked_services[service["id"]] = Services(
+            service_id=service["id"],
+            service_type=service["type"],
+            service_name=service["name"],
+            duration_minutes=service["duration_minutes"],
+            price=service["price"]
+        )
+    
+    book_info = BookInfo(
+        appointment_id=appointment_details["id"],
+        booking_date=appointment_details["booking_date"],
+        start_time=appointment_details["start_time"],
+        end_time=appointment_details["end_time"],
+        status=appointment_details["status"],
+        total_price=appointment_details["total_price"],
+        create_date=appointment_details["create_date"],
+        
+        services=booked_services,
+        customer=Customer(
+            customer_id=appointment_details["customer"]["id"],
+            name=appointment_details["customer"]["name"],
+            phone=appointment_details["customer"]["phone"],
+            email=appointment_details["customer"]["email"] if appointment_details["customer"]["email"] else ""
+        ),
+        staff=Staff(
+            staff_id=appointment_details["staff"]["id"],
+            name=appointment_details["staff"]["name"]
+        )
+    )
+    
+    return book_info

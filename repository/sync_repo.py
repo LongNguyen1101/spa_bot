@@ -1,9 +1,6 @@
-from datetime import date, time, timedelta, datetime
 import json
 from supabase import Client
-from log.logger_config import setup_logging
-
-logger = setup_logging(__name__)
+from datetime import date, time, timedelta, datetime
 
 class CustomerRepo:
     def __init__(self, supabase_client: Client):
@@ -206,9 +203,6 @@ class AppointmentRepo:
         end_time_new: time,
         buffer_time: int = 5
     ) -> list[dict]:
-        # booking_date_new = datetime.strptime(booking_date_new, "%Y-%m-%d").date()
-        # start_time_new = datetime.strptime(start_time_new, "%H:%M:%S").time()
-        # end_time_new = datetime.strptime(end_time_new, "%H:%M:%S").time()
         buffer = timedelta(minutes=buffer_time)
         
          # Tạo datetime giả để cộng buffer
@@ -289,6 +283,68 @@ class AppointmentRepo:
             .execute()
         )
 
+        return response.data if response.data else None
+    
+    def update_appointment_status(
+        self, 
+        appointment_id: int, 
+        update_payload: dict
+    ) -> bool:
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .update(update_payload)
+            .eq("id", appointment_id)
+            .execute()
+        )
+        
+        return bool(response.data)
+    
+    def get_all_booked_appointments(self, customer_id: int) -> list[dict] | None:
+        """
+        Lấy tất cả các lịch hẹn có trạng thái là 'booked' theo customer_id.
+
+        Args:
+            - customer_id (int): ID của khách hàng.
+
+        Returns:
+            - list[dict] | None: Danh sách các lịch hẹn hoặc None nếu không có lịch nào.
+        """
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .select("""
+                *,
+                appointment_services (
+                    services (
+                        id,
+                        type,
+                        name,
+                        duration_minutes,
+                        price
+                    )
+                ),
+                customer:customers!fk_appointments_customer (
+                    id,
+                    name,
+                    phone,
+                    email
+                ),
+                staff:staffs!fk_appointments_staff (
+                    id,
+                    name
+                ),
+                room:rooms!fk_appointments_room (
+                    id,
+                    name
+                )
+            """)
+            .eq("status", "booked")
+            .eq("customer_id", customer_id)
+            .order("booking_date", desc=False)
+            .execute()
+        )
+        
         return response.data if response.data else None
     
 
