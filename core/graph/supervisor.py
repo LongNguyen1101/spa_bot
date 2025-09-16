@@ -1,6 +1,8 @@
 from typing import Literal
-from langgraph.types import Command
+from datetime import datetime
 from pydantic import BaseModel, Field
+
+from langgraph.types import Command
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
@@ -67,7 +69,7 @@ class Supervisor:
                     update.update({
                         "customer_id": customer.get("id"),
                         "name": customer.get("name"),
-                        "phone_number": customer.get("phone"),
+                        "phone": customer.get("phone"),
                         "emai": customer.get("email")
                     })
             else:
@@ -87,6 +89,13 @@ class Supervisor:
             update["messages"] = [HumanMessage(
                 content=state["user_input"]
             )]
+            update.update({
+                "next": next_node,
+                "messages": [HumanMessage(
+                    content=state["user_input"]
+                )],
+                "current_date": str(datetime.now().strftime("%A, %d-%m-%Y"))
+            })
             
             logger.info(f"Agent tiếp theo: {next_node}")
     

@@ -45,7 +45,7 @@ class CustomerRepo:
     
     def check_customer_id(self, customer_id: int) -> bool:
         response = (
-            self.supabase_client.table('customer')
+            self.supabase_client.table('customers')
             .select('id')
             .eq("id", customer_id)
             .execute()
@@ -59,7 +59,7 @@ class CustomerRepo:
         customer_id: int
     ) -> dict | None:
         response = (
-            self.supabase_client.table('customer')
+            self.supabase_client.table('customers')
             .update(update_payload)
             .eq('id', customer_id)
             .execute()
@@ -73,7 +73,7 @@ class CustomerRepo:
         chat_id: str
     ) -> dict | None:
         response = (
-            self.supabase_client.table('customer')
+            self.supabase_client.table('customers')
             .update(update_payload)
             .eq('chat_id', chat_id)
             .execute()
@@ -83,7 +83,7 @@ class CustomerRepo:
     
     def get_uuid(self, chat_id: str) -> str | None:
         res = (
-            self.supabase_client.table("customer")
+            self.supabase_client.table("customers")
                 .select("uuid")
                 .eq("chat_id", chat_id)
                 .execute()
@@ -309,7 +309,7 @@ class RoomRepo:
     def get_all_rooms_return_dict(self) -> dict | None:
         response = (
             self.supabase_client.table('rooms')
-            .select("id", "capacity")
+            .select("id", "name", "capacity")
             .execute()
         )
         
@@ -318,7 +318,10 @@ class RoomRepo:
         
         rooms_dict = {}
         for data in response.data:
-            rooms_dict[data["id"]] = data["capacity"]
+            rooms_dict[data["id"]] = {
+                "name": data["name"],
+                "capacity": data["capacity"]
+            }
         
         return rooms_dict
     
@@ -396,6 +399,12 @@ class AppointmentRepo:
                         duration_minutes,
                         price
                     )
+                ),
+                customer:customers!fk_appointments_customer (
+                    id,
+                    name,
+                    phone,
+                    email
                 ),
                 staff:staffs!fk_appointments_staff (
                     id,

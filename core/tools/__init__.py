@@ -5,18 +5,15 @@ from core.tools.booking_tool import (
 )
 from core.tools.customer_tool import modify_customer_tool
 from core.tools.services_search_tool import (
-    get_services_tool,
-    get_spa_info_tool
+    get_services_tool
 )
 
 services_toolbox = [
-    get_services_tool,
-    get_spa_info_tool
+    get_services_tool
 ]
 
 booking_toolbox = [
     get_services_tool,
-    get_spa_info_tool,
     add_service_tool,
     create_appointment_tool,
     check_available_booking_tool,

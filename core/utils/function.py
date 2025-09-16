@@ -1,6 +1,7 @@
 import json
 import asyncio
 from typing import Any
+from datetime import date, time, datetime
 
 from langgraph.types import Command
 from langgraph.graph import StateGraph
@@ -159,3 +160,26 @@ async def update_state_customer(
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
+
+def time_to_str(t):
+    if t is None:
+        return None
+    if isinstance(t, datetime):
+        return t.time().strftime("%H:%M:%S")
+    if isinstance(t, time):
+        return t.strftime("%H:%M:%S")
+    if isinstance(t, str):
+        return t
+    raise TypeError(f"Unsupported time type: {type(t)}")
+
+
+def date_to_str(d):
+    if d is None:
+        return None
+    if isinstance(d, datetime):
+        return d.date().isoformat()   # YYYY-MM-DD
+    if isinstance(d, date):
+        return d.isoformat()         # YYYY-MM-DD
+    if isinstance(d, str):
+        return d
+    raise TypeError(f"Unsupported date type: {type(d)}")

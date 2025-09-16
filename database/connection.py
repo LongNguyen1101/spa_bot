@@ -42,7 +42,7 @@ def get_specialist_llm() -> ChatOpenAI:
     return ChatOpenAI(
         model=MODEL_SPECIALIST,
         temperature=0,
-        max_retries=2
+        # max_retries=2
     )
 
 # Initialize clients

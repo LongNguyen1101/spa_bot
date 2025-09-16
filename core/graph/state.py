@@ -23,6 +23,7 @@ class AgentState(Origin_AgentState):
     user_input: Annotated[str, _remain_value]
     chat_id: Annotated[str, _remain_value]
     next: Annotated[str, _remain_value]
+    current_date: Annotated[str, _remain_value]
     
     customer_id: Annotated[Optional[int], _remain_value]
     name: Annotated[Optional[str], _remain_value]
@@ -51,6 +52,7 @@ def init_state() -> AgentState:
         user_input="",
         chat_id="",
         next="",
+        current_date=None,
         
         customer_id=None,
         name=None,

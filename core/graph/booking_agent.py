@@ -19,11 +19,14 @@ class BookingAgent:
             
         context = """
         Các thông tin bạn nhận được:
+        - Ngày hiện tại current_date: {current_date}
         - Tên của khách hàng customer_name: {name}
         - SĐT của khách phone: {phone}
         - Email của khách: {email}
+        - Ngày đặt booking_date: {booking_date}
+        - Thời gian đặt start_time: {start_time}
         - Các dịch vụ khách đã xem seen_products: {seen_services}
-        - Các dịch vụ khách đã chọn: {services}
+        - Các dịch vụ khách đã chọn services: {services}
         """
             
         self.prompt = ChatPromptTemplate.from_messages([
@@ -45,8 +48,6 @@ class BookingAgent:
         Args:
             state (AgentState): Trạng thái hội thoại hiện tại.
 
-        Returns:
-            Command: Lệnh cập nhật `messages`, các trường trạng thái (`order`, `cart`, ... nếu có) và kết thúc luồng.
         """
         try:
             result = self.agent.invoke(state)
@@ -58,8 +59,9 @@ class BookingAgent:
             }
             
             for key in ([
-                "customer_id", "name", "phone", "book_info",
-                "email", "seen_services", "services", "total_price", "total_time"
+                "customer_id", "name", "phone", "email", "booking_date",
+                "start_time", "end_time", "room_id", "room_name", "staff_id", "staff_name",
+                "book_info", "seen_services", "services", "total_price", "total_time"
             ]):
                 if result.get(key, None) is not None:
                     update[key] = result[key]

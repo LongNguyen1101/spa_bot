@@ -23,14 +23,14 @@ def _update_seen_services(
     services: List[dict]
 ) -> dict:
     """
-    Cập nhật `seen_services` trong state bằng kết quả dịch vụ trả về.
+    Updates `seen_services` in the state with the returned service results.
 
     Args:
-        seen_products (dict): Bộ nhớ sản phẩm đã xem hiện có.
-        products (List[dict]): Danh sách sản phẩm từ SQL/RAG.
+        seen_services (dict): The existing set of seen services.
+        services (List[dict]): The list of services from SQL/RAG.
 
     Returns:
-        dict: Tập `seen_services` sau khi được cập nhật/ghi đè theo `services_id`.
+        dict: The `seen_services` set after being updated/overwritten by `service_id`.
     """
     for service in services:
         service_id = service.get("id")
@@ -46,42 +46,45 @@ def _update_seen_services(
 
 @tool
 def get_services_tool(
-    keyword: Annotated[str, "Từ khoá của dịch vụ mà khách cung cấp"],
+    keyword: Annotated[str, "Only accept Vietnamese - The keyword provided by the customer that refers to a specific service"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
     """
-    Công cụ này ưu tiên tìm kiếm chính xác bằng SQL nếu người dùng cung cấp SKU hoặc tên sản phẩm. 
-    Nếu không, nó sẽ sử dụng tìm kiếm ngữ nghĩa (RAG) để xử lý các câu hỏi chung chung về sản phẩm.
+    Use this tool when the customer is asking about a **specific service**.
 
-    Chức năng: Tìm kiếm thông tin sản phẩm. 
+    - If the customer provides the exact full service name, the tool will perform an exact SQL search.  
+    - If the customer only provides partial information (e.g., general description), the tool will use semantic search (RAG) to find the closest matching services.
 
-    Tham số: 
-        - keywords (str): chỉ chứa phần từ khoá cốt lõi là tên hoặc mô tả chính xác của dịch vụ mà người dùng quan tâm.
+    Purpose: Retrieve detailed information about one or more spa services, such as description, duration, and price.  
+
+    Parameters:
+        - keyword (str): Only accept Vietnamese - The essential keyword (name, or core description) of the service the customer is asking about.
     """
-    logger.info(f"get_services_tool được gọi với keyword: {keyword}")
+    
+    logger.info(f"get_services_tool called with keyword: {keyword}")
     # --- SQL First Approach ---
     try:
         db_result = service_repo.get_service_by_keyword(
             keyword=keyword
         )
      
-        # logger.info(f"Dữ liệu SQL trả về: {db_result}")
+        # logger.info(f"SQL data returned: {db_result}")
 
         if db_result:
-            logger.info("Có dữ liệu trả về từ SQL")
+            logger.info("Data returned from SQL")
             
             updated_seen_services = _update_seen_services(
-                seen_products=state["seen_services"] if state["seen_services"] is not None else {},
+                seen_services=state["seen_services"] if state["seen_services"] is not None else {},
                 services=db_result
             )
             
             formatted_response = (
-                "Đây là các dịch vụ tìm thấy dựa trên yêu cầu của khách:\n"
+                "Here are the services found based on the customer's request:\n"
                 f"{db_result}\n"
             )
             
-            logger.info("Trả về kết quả từ SQL")
+            logger.info("Returning results from SQL")
             return Command(
                 update=build_update(
                     content=formatted_response,
@@ -90,7 +93,7 @@ def get_services_tool(
                 )
             )
             
-        logger.info("Không có kết quả từ SQL, chuyển sang tìm kiếm RAG")
+        logger.info("No results from SQL, switching to RAG search")
         
         query_embedding = embeddings_model.embed_query(state["user_input"])
         
@@ -99,37 +102,36 @@ def get_services_tool(
             match_count=5
         )
         
-        logger.info(f"Kết quả RAG: {rag_results}")
+        # logger.info(f"RAG results: {rag_results}")
         
         if not rag_results:
-            logger.info("Không có kết quả từ RAG")
+            logger.info("No results from RAG")
             return Command(update=build_update(
-                content="Xin lỗi khách, cửa hàng không có dịch vụ mà khách muốn",
+                content="Apologies, we couldn't find the service you're looking for.",
                 tool_call_id=tool_call_id
             ))
 
-        logger.info("Có kết quả trả về từ RAG")
-        services = [json.loads(item.get("content")) for item in rag_results]
+        logger.info("Results returned from RAG")
+        services = [item.get("content") for item in rag_results]
         
         if not services:
-            logger.info("Không thể parse dịch vụ từ kết quả json RAG")
+            logger.info("Could not parse service from RAG json result")
             return Command(update=build_update(
-                content="Xin lỗi khách, có lỗi trong quá trình tìm kiếm dịch vụ",
+                content="Apologies, there was an error during the service search process.",
                 tool_call_id=tool_call_id
             ))
 
-        
         updated_seen_services = _update_seen_services(
-            seen_products=state["seen_services"] if state["seen_services"] is not None else {},
+            seen_services=state["seen_services"] if state["seen_services"] is not None else {},
             services=services
         )
         
         formatted_response = (
-            "Đây là các dịch vụ được trả về dựa trên yêu cầu của khách:\n\n"
+            "Here are the services returned based on the customer's request:\n\n"
             f"{services}\n"
         )
         
-        logger.info("Trả về kết quả từ RAG")
+        logger.info("Returning results from RAG")
         return Command(
             update=build_update(
                 content=formatted_response,
@@ -139,34 +141,42 @@ def get_services_tool(
         )
 
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        logger.error(f"Error: {e}")
         raise
 
-@tool
-def get_spa_info_tool(
-    tool_call_id: Annotated[str, InjectedToolCallId]
-) -> Command:
-    """
-    Sử dụng tool này để lấy các thông tin của cửa hàng Spa như dịch vụ cung cấp hay thông tin chung
-    """
-    logger.info(f"get_spa_info_tool được gọi")
+# @tool
+# def get_spa_info_tool(
+#     tool_call_id: Annotated[str, InjectedToolCallId]
+# ) -> Command:
+#     """
+#     Use this tool when the customer is asking about **general information** about the spa.  
+#     DO NOT use this tool for specific service details.
+
+#     Examples of usage:
+#       - Customer asks about opening/closing hours.
+#       - Customer asks about available categories of services.
+#       - Customer wants general store information.
+
+#     Purpose: Retrieve high-level information about SPA AnVie (store info, service categories, working hours, etc.).
+#     """
+#     logger.info(f"get_spa_info_tool called")
     
-    try:
-        with open("core/prompts/spa_info.md", "r", encoding="utf-8") as f:
-            spa_info = f.read()
+#     try:
+#         with open("core/prompts/spa_info.md", "r", encoding="utf-8") as f:
+#             spa_info = f.read()
         
-        return Command(
-            update=build_update(
-                content=(
-                    "Đây là thông tin của spa:\n"
-                    f"{spa_info}"
-                ),
-                tool_call_id=tool_call_id
-            )
-        )
-    except Exception as e:
-        logger.error(f"Lỗi: {e}")
-        raise
+#         return Command(
+#             update=build_update(
+#                 content=(
+#                     "Here is the spa's information:\n"
+#                     f"{spa_info}"
+#                 ),
+#                 tool_call_id=tool_call_id
+#             )
+#         )
+#     except Exception as e:
+#         logger.error(f"Error: {e}")
+#         raise
 
 
 
@@ -177,13 +187,13 @@ def get_spa_info_tool(
 #     tool_call_id: Annotated[str, InjectedToolCallId]
 # ) -> Command:
 #     """
-#     Sử dụng công cụ này cho các câu hỏi về hướng dẫn sử dụng, khắc phục sự cố, cài đặt thiết bị, hoặc các vấn đề kỹ thuật khác. 
-#     Công cụ sẽ tìm kiếm trong cơ sở dữ liệu Hỏi & Đáp (Q&A) để cung cấp câu trả lời và hướng dẫn chi tiết.
+#     Use this tool for questions about user manuals, troubleshooting, device setup, or other technical issues.
+#     The tool will search the Question & Answer (Q&A) database to provide detailed answers and instructions.
 
-#     Chức năng: Trả lời các câu hỏi liên quan đến kỹ thuật.
+#     Function: Answer technical-related questions.
 #     """
 #     query = state["user_input"]
-#     logger.info(f"get_qna_tool được gọi với query: {query}")
+#     logger.info(f"get_qna_tool called with query: {query}")
 #     all_documents = []
     
 #     # --- 1. Retrieve documents from qna table ---
@@ -196,10 +206,10 @@ def get_spa_info_tool(
 #         )
 
 #         if not response:
-#             logger.error("Lỗi khi gọi RPC match_qna")
+#             logger.error("Error calling RPC match_qna")
 #             return Command(
 #                 update=build_update(
-#                     content="Xin lỗi khách vì đã xảy ra lỗi khi tìm kiếm thông tin hướng dẫn.",
+#                     content="Sorry, an error occurred while searching for instructions.",
 #                     tool_call_id=tool_call_id
 #                 )
 #             ) 
@@ -207,14 +217,14 @@ def get_spa_info_tool(
 #         for item in response:
 #             all_documents.append(item.get("content", ""))
         
-#         logger.info(f"Tìm thấy {len(all_documents)} tài liệu Q&A")
+#         logger.info(f"Found {len(all_documents)} Q&A documents")
 #         return Command(
 #             update=build_update(
-#                 content=f"Đây là các thông tin tìm thấy liên quan đến câu hỏi của khách:({all_documents})",
+#                 content=f"Here is the information found related to the customer's question:({all_documents})",
 #                 tool_call_id=tool_call_id
 #             )
 #         )
              
 #     except Exception as e:
-#         logger.error(f"Lỗi: {e}")
+#         logger.error(f"Error: {e}")
 #         raise

@@ -55,14 +55,6 @@ def create_main_graph() -> StateGraph:
 
     workflow.set_entry_point("supervisor")
     
-    workflow.add_edge("supervisor", "service_agent")
-    workflow.add_edge("supervisor", "booking_agent")
-    # workflow.add_edge("supervisor", "modify_order_agent")
-    
-    workflow.add_edge("service_agent", END)
-    workflow.add_edge("booking_agent", END)
-    # workflow.add_edge("modify_order_agent", END)
-    
     memory = MemorySaver()
     graph = workflow.compile(checkpointer=memory)
     

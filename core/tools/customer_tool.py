@@ -98,8 +98,8 @@ def modify_customer_tool(
                 ),
                 tool_call_id=tool_call_id,
                 name=updated_info["name"],
-                phone_number=updated_info["phone_number"],
-                address=updated_info["address"],
+                phone=updated_info["phone"],
+                email=updated_info["email"],
             )
         )
 

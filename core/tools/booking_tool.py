@@ -5,10 +5,10 @@ from langchain_core.tools import tool, InjectedToolCallId
 from typing import Optional, Annotated
 from datetime import date, time, timedelta, datetime
 
-from core.utils.function import build_update
 from database.connection import supabase_client
 from core.graph.state import AgentState, Services
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
+from core.utils.function import build_update, time_to_str, date_to_str
 
 from log.logger_config import setup_logging
 
@@ -23,7 +23,7 @@ def _return_selective_services(
     total_time: int,
     total_price: int
 ) -> str:
-    index = 0
+    index = 1
     service_detail = ""
     
     for service_key in services.keys():
@@ -47,14 +47,19 @@ def _return_selective_services(
 def _return_appoointments(
     appointment_details: dict
 ) -> str:
-    index = 0
+    index = 1
+    if appointment_details["customer"]["email"]:
+        email = appointment_details["customer"]["email"]
+    else:
+        email = "Không có"
+        
     service_detail = (
         f"Thời gian đặt: {appointment_details["booking_date"]}\n"
         f"Thơi gian bắt đầu: {appointment_details["start_time"]}\n"
         f"Thời gian kết thúc: {appointment_details["end_time"]}\n\n"
-        f"Tên khách: {appointment_details["name"]}\n"
-        f"SĐT khách: {appointment_details["phone"]}\n"
-        f"Email khách: {appointment_details["email"]}\n\n"
+        f"Tên khách: {appointment_details["customer"]["name"]}\n"
+        f"SĐT khách: {appointment_details["customer"]["phone"]}\n"
+        f"Email khách: {email}\n\n"
         f"Nhân viên thực hiện: {appointment_details["staff"]["name"]}\n"
         f"Phòng: {appointment_details["room"]["name"]}\n\n"
         "Các dịch vụ khách đã đăng ký:\n"
@@ -72,7 +77,7 @@ def _return_appoointments(
         index += 1
     
     service_detail += (
-        f"Tổng giá tiền: {appointment_details["total_price"]}\n"
+        f"\nTổng giá tiền: {appointment_details["total_price"]}\n"
     )
     
     return service_detail
@@ -121,11 +126,14 @@ def _check_available_with_end_time(
     staffs = staff_repo.get_all_staff_return_dict()
     rooms = room_repo.get_all_rooms_return_dict()
 
+    if not overlap_appointments:
+        return rooms, staffs
+    
     # Check available 
     for appointment in overlap_appointments:
         # Check room overlap
         if rooms.get(appointment["room_id"], None) is not None:
-            rooms[appointment["room_id"]] = rooms[appointment["room_id"]] - 1
+            rooms[appointment["room_id"]]["capacity"] = rooms[appointment["room_id"]]["capacity"] - 1
 
             # Delete room overlap
             if rooms[appointment["room_id"]] == 0:
@@ -139,7 +147,7 @@ def _check_available_with_end_time(
     
 @tool
 def add_service_tool(
-    service_id_list: Annotated[list[dict], (
+    service_id_list: Annotated[Optional[list[int]], (
         "Đây là danh sách các id của các dịch vụ mà khách chọn, "
         "được lấy trong danh sách seen_services"
     )],
@@ -154,7 +162,7 @@ def add_service_tool(
     if not service_id_list:
         logger.info("Không xác định được dịch vụ khách chọn")
         return Command(
-            build_update(
+            update=build_update(
                 content=(
                     "Không biết khách chọn dịch vụ nào, hỏi lại khách"
                 ),
@@ -163,7 +171,7 @@ def add_service_tool(
         )
         
     try:
-        services_state = _update_services_state(
+        services_state, total_time, total_price = _update_services_state(
             services_state=state["services"] if state["services"] else {},
             seen_services=state["seen_services"],
             service_id_list=service_id_list
@@ -173,21 +181,20 @@ def add_service_tool(
         
         service_detail = _return_selective_services(
             services=services_state,
-            total_time=state["total_time"],
-            total_price=state["total_price"]
+            total_time=state["total_time"] + total_time if state["total_time"] is not None else total_time,
+            total_price=state["total_price"] + total_price if state["total_price"] is not None else total_price
         )
         
         return Command(
-            build_update(
+            update=build_update(
                 content=(
                     "Đây là thông tin các dịch vụ mà khách chọn:\n"
                     f"{service_detail}\n"
-                    "Nếu thông tin nào chưa có -> Không in thông tin đó ra\n"
-                    "Nếu chưa có tên khách, số điện thoại hay email thì hỏi khách thông "
-                    "tin còn thiếu, lưu ý email khách có thể cung cấp hoặc không"
                 ),
                 tool_call_id=tool_call_id,
-                services=services_state
+                services=services_state,
+                total_time=total_time,
+                total_price=total_price
             )
         )
         
@@ -206,7 +213,7 @@ def check_available_booking_tool(
     Sử dụng tool này để kiểm tra ngày đặt và thời gian đặt của khách có còn lịch trống không
     
     Args:
-        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%d-%m-%Y", bạn bắt buộc phải tuân theo định dạng này.
+        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%d-%m-%Y", bạn bắt buộc phải tuân theo định dạng này, dựa vào current_date để lấy ra ngày mà khách muốn đặt.
         - start_time_new (str | None): Giờ phút giây mà khách đặt, có định dạng "%H:%M:%S", bạn bắt buộc phải tuân theo định dạng này.
     """
     logger.info(f"check_available_booking được gọi")
@@ -214,18 +221,19 @@ def check_available_booking_tool(
     if not booking_date_new:
         logger.info("Không xác định được ngày khách đặt")
         return Command(
-            build_update(
+            update=build_update(
                 content=(
                     "Khách chưa chọn ngày, hỏi khách"
                 ),
                 tool_call_id=tool_call_id
             )
         )
-        
+    booking_date_new = datetime.strptime(booking_date_new, "%d-%m-%Y").date()
+    
     if not start_time_new:
         logger.info("Không xác định được thời gian khách đặt")
         return Command(
-            build_update(
+            update=build_update(
                 content=(
                     "Khách chưa chọn thời gian cụ thể, hỏi khách"
                 ),
@@ -235,10 +243,8 @@ def check_available_booking_tool(
         )
         
     try:
-        logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
-        
-        booking_date_new = datetime.strptime(booking_date_new, "%d-%m-%Y").date()
         start_time_new = datetime.strptime(start_time_new, "%H:%M:%S").time()
+        logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
 
         # Calculate end time
         dt_start = datetime.combine(booking_date_new, start_time_new)
@@ -264,14 +270,14 @@ def check_available_booking_tool(
         logger.info("Tìm thấy phòng và nhân viên khả dụng")
         available_room, available_staff = list(rooms.keys())[0], list(staffs.keys())[0]
 
-        logger.info(f"Phòng khả dụng: {available_room} | nhân viên khả dụng: {available_staff}")
+        logger.info(f"ID phòng khả dụng: {available_room} | ID nhân viên khả dụng: {available_staff}")
         logger.info("Kiểm tra phòng và nhân viên thành công")
 
         return Command(
-            build_update(
+            update=build_update(
                 content=(
-                    "Thông báo khách có lịch trồng\n"
-                    f"Đây là tên phòng của khách: {rooms[available_room]}\n"
+                    "Thông báo khách có lịch trống\n"
+                    f"Đây là tên phòng của khách: {rooms[available_room]["name"]}\n"
                     f"Đây là tên nhân viên: {staffs[available_staff]}"
                 ),
                 tool_call_id=tool_call_id,
@@ -279,7 +285,7 @@ def check_available_booking_tool(
                 start_time=start_time_new,
                 end_time=end_time_new,
                 room_id=available_room,
-                room_name=rooms[available_room],
+                room_name=rooms[available_room]["name"],
                 staff_id=available_staff,
                 staff_name=staffs[available_staff]
             )
@@ -340,12 +346,12 @@ def create_appointment_tool(
         appointment_payload = {
             "customer_id": customer_id,
             "room_id": state["room_id"],
-            "start_time": state["start_time"],
-            "end_time": state["end_time"],
+            "booking_date": date_to_str(state["booking_date"]),
+            "start_time": time_to_str(state["start_time"]),
+            "end_time": time_to_str(state["end_time"]),
             "status": "booked",
             "total_price": state["total_price"],
-            "staff_id": state["staff_id"],
-            "booking_date": state["booking_date"]
+            "staff_id": state["staff_id"]
         }
         
         appointment_res = appointment_repo.create_appointment(

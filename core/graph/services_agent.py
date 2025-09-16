@@ -17,9 +17,9 @@ class ServiceAgent:
             system_prompt = f.read()
             
         context = """
-        Các thông tin bạn nhận được:
-        - Tên của khách hàng customer_name: {name}
-        - Các dịch vụ khách đã xem seen_products: {seen_services}
+        Information you receive:
+        - Customer's name (customer_name): {name}
+        - Services the customer has viewed (seen_products): {seen_services}
         """
 
         self.prompt = ChatPromptTemplate.from_messages([
