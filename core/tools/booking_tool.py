@@ -413,8 +413,6 @@ def create_appointment_tool(
                 content=(
                     "Đặt lịch cho khách thành công, đây là chi tiết đặt lịch của khách:\n"
                     f"{order_detail}\n"
-                    "Không được tóm gọn, phải liệt kê chi tiết, đầy đủ, không bịa đặt "
-                    "không tạo phản hồi các thông tin dư thừa"
                 ),
                 tool_call_id=tool_call_id,
                 book_info=book_info,
@@ -426,3 +424,10 @@ def create_appointment_tool(
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
+    
+# @tool
+# def cancel_booking_tool(
+#     state: Annotated[AgentState, InjectedState],
+#     tool_call_id: Annotated[str, InjectedToolCallId]
+# ) -> Command:
+#     pass

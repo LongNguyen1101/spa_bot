@@ -67,10 +67,10 @@ async def handle_normal_chat(
         state["user_input"] = user_input
         state["chat_id"] = chat_id
         
-        state["customer_id"] = customer["customer_id"]
+        state["customer_id"] = customer["id"]
         state["name"] = customer["name"]
-        state["phone_number"] = customer["phone_number"]
-        state["address"] = customer["address"]
+        state["phone"] = customer["phone"]
+        state["email"] = customer["email"]
 
         events = graph.astream(state, config=config)
 

@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.graph.build_graph import create_main_graph
 
 from api.v1.routes import router as api_router_v1
-# from api.v2.routes import router as api_router_v2
+from api.v2.routes import router as api_router_v2
 # from api.v3.routes import router as api_router_v3
 
 # @asynccontextmanager
@@ -40,7 +40,7 @@ app.add_middleware(
 
 # Include the API router with a prefix
 app.include_router(api_router_v1, prefix="/api/v1")
-# app.include_router(api_router_v2, prefix="/api/v2")
+app.include_router(api_router_v2, prefix="/api/v2")
 # app.include_router(api_router_v3, prefix="/api/v3")
 
 # Define a root endpoint

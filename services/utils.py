@@ -68,7 +68,7 @@ async def get_uuid(chat_id: str) -> str | None:
     """
     try:
         res = (
-            supabase_client.table("customer")
+            supabase_client.table("customers")
                 .select("uuid")
                 .eq("chat_id", chat_id)
                 .execute()
@@ -91,7 +91,7 @@ async def update_uuid(chat_id: str, new_uuid: str) -> str | None:
     """
     try:
         res = (
-            supabase_client.table("customer")
+            supabase_client.table("customers")
             .update({"uuid": new_uuid})
             .eq("chat_id", chat_id)
             .execute()
@@ -113,7 +113,7 @@ async def get_or_create_customer(chat_id: str) -> Optional[dict]:
         Optional[dict]: Bản ghi khách hàng (dict) hoặc None nếu thất bại.
     """
     response = (
-        supabase_client.table("customer")
+        supabase_client.table("customers")
         .upsert(
             {"chat_id": chat_id},
             on_conflict="chat_id"
