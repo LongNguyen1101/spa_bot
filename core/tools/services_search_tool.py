@@ -144,87 +144,52 @@ def get_services_tool(
         logger.error(f"Error: {e}")
         raise
 
-# @tool
-# def get_spa_info_tool(
-#     tool_call_id: Annotated[str, InjectedToolCallId]
-# ) -> Command:
-#     """
-#     Use this tool when the customer is asking about **general information** about the spa.  
-#     DO NOT use this tool for specific service details.
+@tool
+def get_qna_tool(
+    state: Annotated[AgentState, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId]
+) -> Command:
+    """
+    Use this tool when the customer is asking about **general information related to the spa**.
 
-#     Examples of usage:
-#       - Customer asks about opening/closing hours.
-#       - Customer asks about available categories of services.
-#       - Customer wants general store information.
+    - This tool will search the Frequently Asked Questions (FAQ) database to provide detailed answers and guidance.
+    - It is suitable for questions about booking procedures, opening hours, available services, or other general inquiries about the spa.
 
-#     Purpose: Retrieve high-level information about SPA AnVie (store info, service categories, working hours, etc.).
-#     """
-#     logger.info(f"get_spa_info_tool called")
+    Purpose: Retrieve detailed information or instructions related to the customer's common questions about the spa.
+    """
+    query = state["user_input"]
+    logger.info(f"get_qna_tool called with query: {query}")
     
-#     try:
-#         with open("core/prompts/spa_info.md", "r", encoding="utf-8") as f:
-#             spa_info = f.read()
+    try:
+        query_embedding = embeddings_model.embed_query(query)
         
-#         return Command(
-#             update=build_update(
-#                 content=(
-#                     "Here is the spa's information:\n"
-#                     f"{spa_info}"
-#                 ),
-#                 tool_call_id=tool_call_id
-#             )
-#         )
-#     except Exception as e:
-#         logger.error(f"Error: {e}")
-#         raise
+        rag_results = service_repo.get_qna_by_embedding(
+            query_embedding=query_embedding,
+            match_count=3
+        )
 
-
-
-
-# @tool
-# def get_qna_tool(
-#     state: Annotated[AgentState, InjectedState],
-#     tool_call_id: Annotated[str, InjectedToolCallId]
-# ) -> Command:
-#     """
-#     Use this tool for questions about user manuals, troubleshooting, device setup, or other technical issues.
-#     The tool will search the Question & Answer (Q&A) database to provide detailed answers and instructions.
-
-#     Function: Answer technical-related questions.
-#     """
-#     query = state["user_input"]
-#     logger.info(f"get_qna_tool called with query: {query}")
-#     all_documents = []
-    
-#     # --- 1. Retrieve documents from qna table ---
-#     try:
-#         query_embedding = embeddings_model.embed_query(query)
-        
-#         response = product_repo.get_qna_by_embedding(
-#             query_embedding=query_embedding,
-#             match_count=3
-#         )
-
-#         if not response:
-#             logger.error("Error calling RPC match_qna")
-#             return Command(
-#                 update=build_update(
-#                     content="Sorry, an error occurred while searching for instructions.",
-#                     tool_call_id=tool_call_id
-#                 )
-#             ) 
+        if not rag_results:
+            logger.error("Error calling RPC match_qna")
+            return Command(
+                update=build_update(
+                    content="Sorry customer, an error occurred while searching for instructions.",
+                    tool_call_id=tool_call_id
+                )
+            ) 
               
-#         for item in response:
-#             all_documents.append(item.get("content", ""))
+        qna = [item.get("content") for item in rag_results]
         
-#         logger.info(f"Found {len(all_documents)} Q&A documents")
-#         return Command(
-#             update=build_update(
-#                 content=f"Here is the information found related to the customer's question:({all_documents})",
-#                 tool_call_id=tool_call_id
-#             )
-#         )
+        logger.info(f"Found {len(qna)} Q&A documents")
+        return Command(
+            update=build_update(
+                content=(
+                    "Here is the information found related to the customer's question: \n"
+                    f"{qna}"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
              
-#     except Exception as e:
-#         logger.error(f"Error: {e}")
-#         raise
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        raise

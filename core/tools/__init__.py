@@ -9,10 +9,11 @@ from core.tools.modify_booking_tool import (
 )
 from core.tools.service_tool import add_service_tool
 from core.tools.customer_tool import modify_customer_tool
-from core.tools.services_search_tool import get_services_tool
+from core.tools.services_search_tool import get_services_tool, get_qna_tool
 
 services_toolbox = [
-    get_services_tool
+    get_services_tool,
+    get_qna_tool
 ]
 
 booking_toolbox = [

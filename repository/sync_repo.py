@@ -138,14 +138,26 @@ class ServiceRepo:
         match_count: int = 3
     ) -> list[dict] | None:
         response = self.supabase_client.rpc(
-            "match_qna",
+            "match_qna_embedding",
             {
-                "query_embedding_input": query_embedding,
-                "match_count": match_count
+                "query_embedding": query_embedding,
+                "match_count": match_count,
+                "filter": {}
             }
         ).execute()
         
-        return response.data if response.data else None
+        if not response.data:
+            return None
+
+        results = [
+            {
+                "similarity": data["similarity"],
+                "content": json.loads(data['content'])
+            }
+            for data in response.data
+        ]
+        
+        return results
     
     def get_all_services_without_des(self) -> list[dict]:
         response = (
@@ -195,6 +207,22 @@ class RoomRepo:
 class AppointmentRepo:
     def __init__(self, supabase_client: Client):
         self.supabase_client = supabase_client
+        
+    def get_appointment_by_booking_date(
+        self, 
+        booking_date: date
+    ) -> list[dict] | None:
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .select("id, staff_id, room_id, start_time, end_time")
+            .eq("booking_date", booking_date)
+            .eq("status", "booked")
+            .order("start_time", desc=False)
+            .execute()
+        )
+        
+        return response.data if response.data else None
         
     def get_overlap_appointments(
         self, 

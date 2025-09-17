@@ -92,7 +92,7 @@ def add_service_tool(
         
     try:
         services_state, total_time, total_price = _update_services_state(
-            services_state=state["services"],
+            services_state=state["services"] if state["services"] is not None else {},  
             seen_services=state["seen_services"],
             service_id_list=service_id_list
         )

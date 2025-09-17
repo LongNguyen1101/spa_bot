@@ -1,6 +1,8 @@
+import os
 import json
 import asyncio
 from typing import Any
+from dotenv import load_dotenv
 from datetime import date, time, datetime
 
 from langgraph.types import Command
@@ -15,8 +17,12 @@ from core.graph.state import AgentState, BookInfo, Customer, Services, Staff
 
 from log.logger_config import setup_logging
 
+load_dotenv()
 logger = setup_logging(__name__)
 customer_repo = CustomerRepo(supabase_client=supabase_client)
+
+OPEN_TIME_STR = os.getenv("OPEN_TIME_STR", "08:00:00")
+CLOSE_TIME_STR = os.getenv("CLOSE_TIME_STR", "21:00:00")
 
 def build_update(
     content: str,
@@ -44,26 +50,6 @@ def build_update(
         ],
         **kwargs
     }
-    
-def fail_if_missing(condition, message, tool_call_id) -> Command:
-    """
-    Trả về `Command` chứa thông báo hướng dẫn nếu điều kiện tiền đề không thỏa.
-
-    Args:
-        condition (Any): Điều kiện cần thỏa để tiếp tục xử lý.
-        message (str): Nội dung hướng dẫn/nhắc người dùng bổ sung.
-        tool_call_id (Any): ID gọi tool hiện tại.
-
-    Returns:
-        Command: Cập nhật message nếu thiếu điều kiện, ngược lại trả None (fallthrough).
-    """
-    if not condition:
-        return Command(
-            update=build_update(
-                content=message,
-                tool_call_id=tool_call_id,
-            )
-        )
         
 async def test_bot(
     graph: StateGraph,
@@ -173,7 +159,6 @@ def time_to_str(t):
         return t
     raise TypeError(f"Unsupported time type: {type(t)}")
 
-
 def date_to_str(d):
     if d is None:
         return None
@@ -260,3 +245,104 @@ def update_book_info(appointment_details: dict) -> BookInfo:
     )
     
     return book_info
+
+def parse_time(s: str) -> time:
+    return datetime.strptime(s, "%H:%M:%S").time()
+
+def time_to_minutes(t: time) -> int:
+    return t.hour * 60 + t.minute
+
+def minutes_to_time(m: int) -> time:
+    h = m // 60
+    mi = m % 60
+    return time(hour=h, minute=mi)
+
+def free_slots(
+    orders: list, 
+    key: str, 
+    key_id: int, 
+    open_time_str: str = OPEN_TIME_STR, 
+    close_time_str: str = CLOSE_TIME_STR
+) -> list:
+    """
+    orders: list các order
+    key: "room_id" hoặc "staff_id"
+    key_id: giá trị cụ thể (ví dụ room_id = 1 hoặc staff_id = 2)
+    open_time_str, close_time_str: giờ mở & đóng cửa
+    Trả về list các khoảng thời gian rỗi cho key = key_id
+    """
+    # lọc orders theo key
+    filtered = [o for o in orders if o.get(key) == key_id]
+    
+    # convert thành các interval (start, end) bằng phút
+    intervals = []
+    for o in filtered:
+        st = time_to_minutes(parse_time(o["start_time"]))
+        et = time_to_minutes(parse_time(o["end_time"]))
+        intervals.append( (st, et) )
+    intervals.sort(key=lambda x: x[0])
+    
+    open_min = time_to_minutes(parse_time(open_time_str))
+    close_min = time_to_minutes(parse_time(close_time_str))
+    
+    free_slots = []
+    
+    if not intervals:
+        # nếu không có lịch nào → rỗi nguyên khung
+        free_slots.append( (open_min, close_min) )
+    else:
+        # Trước booking đầu
+        first_start = intervals[0][0]
+        if first_start > open_min:
+            free_slots.append( (open_min, first_start) )
+        
+        # Giữa các booking
+        for i in range(len(intervals) - 1):
+            end_current = intervals[i][1]
+            next_start = intervals[i+1][0]
+            if next_start > end_current:
+                free_slots.append( (end_current, next_start) )
+        
+        # Sau booking cuối tới đóng cửa
+        last_end = intervals[-1][1]
+        if last_end < close_min:
+            free_slots.append( (last_end, close_min) )
+    
+    # convert lại thành time string cho dễ nhìn
+    free_slots_str = []
+    for (s_min, e_min) in free_slots:
+        s_time = minutes_to_time(s_min).strftime("%H:%M:%S")
+        e_time = minutes_to_time(e_min).strftime("%H:%M:%S")
+        free_slots_str.append({"start_time": s_time, "end_time": e_time})
+    
+    return free_slots_str
+
+def free_slots_all(
+    orders: list, 
+    rooms_dict: dict, 
+    staffs_dict: dict, 
+    open_time_str: str = OPEN_TIME_STR, 
+    close_time_str: str = CLOSE_TIME_STR    
+):
+    result = {
+        "rooms": {},
+        "staff": {}
+    }
+    # gom tất cả các key cần xét
+    # room_ids và staff_ids
+    room_ids = list(rooms_dict.keys())
+    staff_ids = list(staffs_dict.keys())
+    # duyệt lần lượt
+    for key_type, key_ids in [("room_id", room_ids), ("staff_id", staff_ids)]:
+        # key_type là "room_id" hoặc "staff_id"
+        for kid in key_ids:
+            result_field = "rooms" if key_type == "room_id" else "staff"
+            result[result_field][kid] = free_slots(
+                orders,
+                key=key_type,
+                key_id=kid,
+                open_time_str=open_time_str,
+                close_time_str=close_time_str
+            )
+            
+    return result

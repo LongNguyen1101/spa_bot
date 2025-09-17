@@ -9,7 +9,8 @@ from core.graph.state import AgentState
 from database.connection import supabase_client
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
-    build_update, 
+    build_update,
+    free_slots_all, 
     time_to_str, 
     date_to_str,
     return_appointments,
@@ -131,8 +132,10 @@ def check_available_booking_tool(
     Sử dụng tool này để kiểm tra ngày đặt và thời gian đặt của khách có còn lịch trống không
     
     Args:
-        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, có định dạng "%Y-%m-%d", bạn bắt buộc phải tuân theo định dạng này, dựa vào current_date để lấy ra ngày mà khách muốn đặt.
-        - start_time_new (str | None): Giờ phút giây mà khách đặt, có định dạng "%H:%M:%S", bạn bắt buộc phải tuân theo định dạng này.
+        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, bắt buộc có định dạng "%Y-%m-%d". 
+        **Tham số này chấp nhận None**
+        - start_time_new (str | None): Giờ phút giây mà khách đặt, bắt buộc có định dạng "%H:%M:%S"
+        **Tham số này chấp nhận None**
     """
     logger.info(f"check_available_booking được gọi")
     
@@ -149,11 +152,33 @@ def check_available_booking_tool(
     booking_date_new = datetime.strptime(booking_date_new, "%Y-%m-%d").date()
     
     if not start_time_new:
-        logger.info("Không xác định được thời gian khách đặt")
+        logger.info("Khách không cung cấp thời gian cụ thể")
+        
+        # Lấy ra danh sách phòng và nhân viên khả dụng trong ngày đó
+        staffs = staff_repo.get_all_staff_return_dict()
+        rooms = room_repo.get_all_rooms_return_dict()
+        orders = appointment_repo.get_appointment_by_booking_date(
+            booking_date=booking_date_new
+        )
+        
+        free_all = free_slots_all(
+            orders=orders,
+            rooms_dict=rooms,
+            staffs_dict=staffs
+        )
+        
+        response = ""
+        for rid, slots in free_all["rooms"].items():
+            response += f"Room '{rooms[rid]["name"]}' free slots:\n"
+            for slot in slots:
+                response += f"- {slot['start_time']} → {slot['end_time']}\n"
+        
+        logger.info(f"Phòng khả dụng: {free_all["rooms"]}")
+        
         return Command(
             update=build_update(
                 content=(
-                    "Khách chưa chọn thời gian cụ thể, hỏi khách"
+                    f"{response}"
                 ),
                 tool_call_id=tool_call_id,
                 booking_date=booking_date_new
@@ -186,6 +211,7 @@ def check_available_booking_tool(
             )
 
         logger.info("Tìm thấy phòng và nhân viên khả dụng")
+        # Chọn phòng đầu tiên và nhân viên đầu tiên trong danh sách khả dụng
         available_room, available_staff = list(rooms.keys())[0], list(staffs.keys())[0]
 
         logger.info(f"ID phòng khả dụng: {available_room} | ID nhân viên khả dụng: {available_staff}")
@@ -194,9 +220,7 @@ def check_available_booking_tool(
         return Command(
             update=build_update(
                 content=(
-                    "Thông báo khách có lịch trống\n"
-                    f"Đây là tên phòng của khách: {rooms[available_room]["name"]}\n"
-                    f"Đây là tên nhân viên: {staffs[available_staff]}"
+                    "Thông báo khách có lịch trống"
                 ),
                 tool_call_id=tool_call_id,
                 booking_date=booking_date_new,
