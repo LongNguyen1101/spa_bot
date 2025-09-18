@@ -1,11 +1,11 @@
 import os
 import json
+import random
 import asyncio
 from typing import Any
 from dotenv import load_dotenv
 from datetime import date, time, datetime
 
-from langgraph.types import Command
 from langgraph.graph import StateGraph
 from langchain_core.messages import ToolMessage
 from langchain_core.messages import AIMessage, HumanMessage
@@ -246,6 +246,9 @@ def update_book_info(appointment_details: dict) -> BookInfo:
     
     return book_info
 
+def parese_date(s: str) -> date:
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
 def parse_time(s: str) -> time:
     return datetime.strptime(s, "%H:%M:%S").time()
 
@@ -338,7 +341,7 @@ def free_slots_all(
         for kid in key_ids:
             result_field = "rooms" if key_type == "room_id" else "staff"
             result[result_field][kid] = free_slots(
-                orders,
+                orders=orders,
                 key=key_type,
                 key_id=kid,
                 open_time_str=open_time_str,
@@ -346,3 +349,130 @@ def free_slots_all(
             )
             
     return result
+
+def staff_free_in_interval(
+    orders: dict, 
+    interval_start_min: int, 
+    interval_end_min: int, 
+    staffs: dict
+) -> dict:
+    
+    free_staff = {}
+    for st_id in staffs.keys():
+        # tìm các order của staff này
+        st_orders = [o for o in orders if o["staff_id"] == st_id]
+        # nếu có bất kỳ order nào overlap với interval → không rỗi
+        busy = False
+        for o in st_orders:
+            o_st = time_to_minutes(parse_time(o["start_time"]))
+            o_et = time_to_minutes(parse_time(o["end_time"]))
+            # kiểm tra overlap: (o_st < interval_end) và (o_et > interval_start)
+            if (o_st < interval_end_min) and (o_et > interval_start_min):
+                busy = True
+                break
+        if not busy:
+            free_staff[st_id] = staffs[st_id]
+    return free_staff
+
+# Hàm free slots với capacity ≥ k + staff rỗi
+def free_slots_with_staff(
+    orders: dict, 
+    room_id: int, 
+    room_capacity: int, 
+    staffs, 
+    k: int,
+    open_time_str: str = OPEN_TIME_STR, 
+    close_time_str: str = CLOSE_TIME_STR, 
+) -> list:
+    # Lọc orders của phòng
+    room_orders = [o for o in orders if o["room_id"] == room_id]
+
+    # Tạo event +1, -1 cho room bookings
+    events = []
+    for o in room_orders:
+        st = time_to_minutes(parse_time(o["start_time"]))
+        et = time_to_minutes(parse_time(o["end_time"]))
+        events.append((st, +1))
+        events.append((et, -1))
+
+    open_min = time_to_minutes(parse_time(open_time_str))
+    close_min = time_to_minutes(parse_time(close_time_str))
+    events.append((open_min, 0))
+    events.append((close_min, 0))
+
+    # sort event
+    events.sort(key=lambda x: (x[0], x[1]))
+
+    free_slots = []
+    curr_active = 0
+    prev_time = open_min
+
+    for time_point, delta in events:
+        if time_point > prev_time:
+            free_capacity = room_capacity - curr_active
+            if free_capacity >= k:
+                # đây là khoảng có ≥ k chỗ
+                interval_start = prev_time
+                interval_end = time_point
+                # tìm staff rỗi trong khoảng này
+                free_staff = staff_free_in_interval(
+                    orders=orders, 
+                    interval_start_min=interval_start, 
+                    interval_end_min=interval_end, 
+                    staffs=staffs
+                )
+                free_slots.append({
+                    "start_time": minutes_to_time(interval_start).strftime("%H:%M:%S"),
+                    "end_time":   minutes_to_time(interval_end).strftime("%H:%M:%S"),
+                    "free_capacity": free_capacity,
+                    "free_staffs": free_staff
+                })
+        curr_active += delta
+        prev_time = time_point
+
+    return free_slots
+
+def interval_covers(s_free: str, e_free: str, s_req: str, e_req: str) -> bool:
+    """
+    s_free, e_free, s_req, e_req đều là string "HH:MM:SS"
+    Trả True nếu [s_req, e_req] nằm hoàn toàn trong [s_free, e_free]
+    """
+    start_free = time_to_minutes(parse_time(s_free))
+    end_free   = time_to_minutes(parse_time(e_free))
+    start_req  = time_to_minutes(parse_time(s_req))
+    end_req    = time_to_minutes(parse_time(e_req))
+    
+    return (start_free <= start_req) and (end_req <= end_free)
+
+# Hàm chính: tìm phòng + chọn nhân viên ngẫu nhiên
+def choose_room_and_staff(free_dict: dict, s_req: str, e_req: str):
+    """
+    free_dict: dict mapping room_id → list of khoảng trống, mỗi khoảng có
+               {start_time, end_time, free_capacity, free_staffs}
+    s_req, e_req: thời gian khách muốn đặt
+    Trả về (room_id, staff_id, staff_name) nếu có; nếu không có phòng phù hợp trả None
+    """
+    # duyệt qua các phòng theo thứ tự key (như “từ trên xuống dưới”)
+    for room_id, slots in free_dict.items():
+        # nếu không có slot trống nào skip
+        if not slots:
+            continue
+        for slot in slots:
+            # nếu slot này bao phủ thời gian khách muốn
+            if interval_covers(slot["start_time"], slot["end_time"], s_req, e_req):
+                # nếu có free_staffs và không rỗng
+                fs = slot.get("free_staffs", {})
+                if fs:
+                    # chọn ngẫu nhiên staff_id trong dict free_staffs
+                    staff_id = random.choice(list(fs.keys()))
+                    return {
+                        "room_id": room_id,
+                        "staff_id": staff_id
+                    }
+                else:
+                    return {
+                        "room_id": room_id,
+                        "staff_id": None
+                    }
+    # nếu không tìm được phòng nào phù hợp
+    return None

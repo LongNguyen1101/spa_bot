@@ -162,3 +162,73 @@ def get_all_editable_booking(
     except Exception as e:
         logger.error(f"Lỗi: {e}")
         raise
+
+@tool
+def alter_booking_tool(
+    appointment_id: Annotated[Optional[int], "ID của lịch hẹn mà khách muốn huỷ"],
+    state: Annotated[AgentState, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId]
+) -> Command:
+    """
+    Sử dụng tool này để thay đổi lịch đã đặt của khách
+    
+    Parameters:
+        - appointment_id (int | None): ID của lịch hẹn mà khách muốn thay đổi, lấy trong book_info
+    """
+    logger.info(f"cancel_booking_tool được gọi")
+    
+    if not appointment_id:
+        logger.info("Không xác định được lịch hẹn khách muốn huỷ")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không biết khách muốn huỷ lịch hẹn nào, hỏi lại khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+    
+    book_info = state["book_info"].copy()
+    if appointment_id not in book_info:
+        logger.info(f"Lịch hẹn với ID {appointment_id} không tồn tại trong book_info")
+        return Command(
+            update=build_update(
+                content=(
+                    f"Lịch hẹn với ID {appointment_id} không tồn tại"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+    
+    try:
+        success = appointment_repo.update_appointment_status(
+            appointment_id=appointment_id,
+            update_payload={"status": "cancelled"}
+        )
+        
+        if not success:
+            logger.error(f"Lỗi ở cấp DB -> Không thể huỷ lịch hẹn với ID {appointment_id}")
+            return Command(
+                update=build_update(
+                    content=(
+                        "Không thể huỷ lịch hẹn, xin lỗi khách và hứa sẽ khắc phục sớm nhất."
+                    ),
+                    tool_call_id=tool_call_id
+                )
+            )
+            
+        del book_info[appointment_id]
+        logger.info(f"Huỷ lịch hẹn với ID {appointment_id} thành công")
+        
+        return Command(
+            update=build_update(
+                content=(
+                    f"Đã huỷ lịch hẹn thành công. ID lịch hẹn: {appointment_id}."
+                ),
+                tool_call_id=tool_call_id,
+                book_info=book_info
+            )
+        )
+    except Exception as e:
+        logger.error(f"Lỗi: {e}")
+        raise

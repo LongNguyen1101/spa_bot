@@ -1,3 +1,4 @@
+from ast import parse
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
@@ -10,7 +11,11 @@ from database.connection import supabase_client
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
     build_update,
-    free_slots_all, 
+    choose_room_and_staff,
+    free_slots_all,
+    free_slots_with_staff,
+    parese_date,
+    parse_time, 
     time_to_str, 
     date_to_str,
     return_appointments,
@@ -26,44 +31,52 @@ room_repo = RoomRepo(supabase_client=supabase_client)
 staff_repo = StaffRepo(supabase_client=supabase_client)
 
 
-def _check_available_time_without_total_time(
-    booking_date: date,
-    start_time: time
-):
-    pass
+def _handle_not_start_time(
+    rooms: dict,
+    orders: dict,
+    staffs: dict
+) -> str:
+    response = ""
+    for r_id, value in rooms.items():
+        response += f"Room: {value["name"]} (capacity={value['capacity']}):\n"
+        slots = free_slots_with_staff(
+            orders=orders,
+            room_id=r_id,
+            room_capacity=value["capacity"],
+            staffs=staffs,
+            k=1
+        )
+        for slot in slots:
+            response += f"- {slot['start_time']} - {slot['end_time']}, free_capacity={slot['free_capacity']}\n"
+    
+    return response
+    
 
 def _check_available_with_end_time(
-    booking_date_new: date,
-    start_time_new: time,
-    end_time_new: time
-) -> tuple[dict, dict]:  
-    overlap_appointments = appointment_repo.get_overlap_appointments(
-        booking_date_new=booking_date_new,
-        start_time_new=start_time_new,
-        end_time_new=end_time_new
+    start_time_new: str,
+    end_time_new: str,
+    orders: dict,
+    rooms: dict,
+    staffs: dict
+) -> dict:
+    all_slots = {}
+    for r_id, value in rooms.items():
+        slots = free_slots_with_staff(
+            orders,
+            room_id=r_id,
+            room_capacity=value["capacity"],
+            staffs=staffs,
+            k=3
+        )
+        all_slots[r_id] = slots
+    
+    available = choose_room_and_staff(
+        free_dict=all_slots,
+        s_req=start_time_new,
+        e_req=end_time_new
     )
     
-    staffs = staff_repo.get_all_staff_return_dict()
-    rooms = room_repo.get_all_rooms_return_dict()
-
-    if not overlap_appointments:
-        return rooms, staffs
-    
-    # Check available 
-    for appointment in overlap_appointments:
-        # Check room overlap
-        if rooms.get(appointment["room_id"], None) is not None:
-            rooms[appointment["room_id"]]["capacity"] = rooms[appointment["room_id"]]["capacity"] - 1
-
-            # Delete room overlap
-            if rooms[appointment["room_id"]] == 0:
-                del rooms[appointment["room_id"]]
-
-        # Delete staff overlap
-        if staffs.get(appointment["staff_id"], None) is not None:
-            del staffs[appointment["staff_id"]]
-            
-    return rooms, staffs
+    return available
 
 @tool
 def resolve_weekday_to_date_tool(
@@ -139,82 +152,79 @@ def check_available_booking_tool(
     """
     logger.info(f"check_available_booking được gọi")
     
-    if not booking_date_new:
-        logger.info("Không xác định được ngày khách đặt")
-        return Command(
-            update=build_update(
-                content=(
-                    "Khách chưa chọn ngày, hỏi khách"
-                ),
-                tool_call_id=tool_call_id
-            )
-        )
-    booking_date_new = datetime.strptime(booking_date_new, "%Y-%m-%d").date()
-    
-    if not start_time_new:
-        logger.info("Khách không cung cấp thời gian cụ thể")
-        
+    try:
         # Lấy ra danh sách phòng và nhân viên khả dụng trong ngày đó
+            
+        if not booking_date_new:
+            logger.info("Không xác định được ngày khách đặt")
+            return Command(
+                update=build_update(
+                    content=(
+                        "Khách chưa chọn ngày, hỏi khách"
+                    ),
+                    tool_call_id=tool_call_id
+                )
+            )
+        
         staffs = staff_repo.get_all_staff_return_dict()
         rooms = room_repo.get_all_rooms_return_dict()
         orders = appointment_repo.get_appointment_by_booking_date(
             booking_date=booking_date_new
         )
-        
-        free_all = free_slots_all(
-            orders=orders,
-            rooms_dict=rooms,
-            staffs_dict=staffs
-        )
-        
-        response = ""
-        for rid, slots in free_all["rooms"].items():
-            response += f"Room '{rooms[rid]["name"]}' free slots:\n"
-            for slot in slots:
-                response += f"- {slot['start_time']} → {slot['end_time']}\n"
-        
-        logger.info(f"Phòng khả dụng: {free_all["rooms"]}")
-        
-        return Command(
-            update=build_update(
-                content=(
-                    f"{response}"
-                ),
-                tool_call_id=tool_call_id,
-                booking_date=booking_date_new
-            )
-        )
-        
-    try:
-        start_time_new = datetime.strptime(start_time_new, "%H:%M:%S").time()
-        logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
+    
+        if not start_time_new:
+            logger.info("Khách không cung cấp thời gian cụ thể")
 
+            response = _handle_not_start_time(
+                rooms=rooms,
+                orders=orders,
+                staffs=staffs
+            )
+
+            logger.info("Tìm khung thời gian trống thành công")
+
+            return Command(
+                update=build_update(
+                    content=(
+                        f"{response}"
+                    ),
+                    tool_call_id=tool_call_id,
+                    booking_date=booking_date_new
+                )
+            )
+        
+        
+        logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
+    
         # Calculate end time
-        dt_start = datetime.combine(booking_date_new, start_time_new)
+        parse_booking_date = parese_date(booking_date_new)
+        parse_start_time = parse_time(start_time_new)
+        dt_start = datetime.combine(parse_booking_date, parse_start_time)
+        
         if state["total_time"]:
             dt_end = dt_start + timedelta(minutes=state["total_time"])
         else:
             dt_end = dt_start + timedelta(minutes=60)
-        end_time_new = dt_end.time()
+        end_time_new = time_to_str(dt_end)
 
-        rooms, staffs = _check_available_with_end_time(
-            booking_date_new=booking_date_new,
+        available = _check_available_with_end_time(
             start_time_new=start_time_new,
-            end_time_new=end_time_new
+            end_time_new=end_time_new,
+            orders=orders,
+            rooms=rooms,
+            staffs=staffs
         )
 
-        if not rooms or not staffs:
+        if not available["room_id"] or not available["staff_id"]:
             logger.info(
-                "Không có phòng trống hoặc nhân viên khả dụng "
-                f"Danh sách phòng: {rooms} ||||| "
-                f"Danh sách nhân viên: {staffs}"
+                "Không có phòng trống hoặc nhân viên khả dụng"
             )
+        
+        room_id = available["room_id"]
+        staff_id = available["staff_id"]
 
         logger.info("Tìm thấy phòng và nhân viên khả dụng")
-        # Chọn phòng đầu tiên và nhân viên đầu tiên trong danh sách khả dụng
-        available_room, available_staff = list(rooms.keys())[0], list(staffs.keys())[0]
-
-        logger.info(f"ID phòng khả dụng: {available_room} | ID nhân viên khả dụng: {available_staff}")
+        logger.info(f"ID phòng khả dụng: {room_id} | ID nhân viên khả dụng: {staff_id}")
         logger.info("Kiểm tra phòng và nhân viên thành công")
 
         return Command(
@@ -226,10 +236,10 @@ def check_available_booking_tool(
                 booking_date=booking_date_new,
                 start_time=start_time_new,
                 end_time=end_time_new,
-                room_id=available_room,
-                room_name=rooms[available_room]["name"],
-                staff_id=available_staff,
-                staff_name=staffs[available_staff]
+                room_id=room_id,
+                room_name=rooms[room_id]["name"],
+                staff_id=staff_id,
+                staff_name=staffs[staff_id]
             )
         )
     except Exception as e:
@@ -288,9 +298,9 @@ def create_appointment_tool(
         appointment_payload = {
             "customer_id": customer_id,
             "room_id": state["room_id"],
-            "booking_date": date_to_str(state["booking_date"]),
-            "start_time": time_to_str(state["start_time"]),
-            "end_time": time_to_str(state["end_time"]),
+            "booking_date": state["booking_date"],
+            "start_time": state["start_time"],
+            "end_time": state["end_time"],
             "status": "booked",
             "total_price": state["total_price"],
             "staff_id": state["staff_id"]

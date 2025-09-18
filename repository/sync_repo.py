@@ -210,7 +210,7 @@ class AppointmentRepo:
         
     def get_appointment_by_booking_date(
         self, 
-        booking_date: date
+        booking_date: str
     ) -> list[dict] | None:
         response = (
             self.supabase_client

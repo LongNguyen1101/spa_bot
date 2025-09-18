@@ -66,9 +66,9 @@ class AgentState(Origin_AgentState):
     room_id: Annotated[Optional[int], _remain_value]
     room_name: Annotated[Optional[str], _remain_value]
     
-    booking_date: Annotated[Optional[date], _remain_value]
-    start_time: Annotated[Optional[time], _remain_value]
-    end_time: Annotated[Optional[time], _remain_value]
+    booking_date: Annotated[Optional[str], _remain_value]
+    start_time: Annotated[Optional[str], _remain_value]
+    end_time: Annotated[Optional[str], _remain_value]
     total_time: Annotated[Optional[int], _remain_value]
     
     total_price: Annotated[Optional[int], _remain_value]
