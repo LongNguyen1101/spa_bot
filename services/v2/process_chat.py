@@ -108,9 +108,11 @@ async def handle_new_chat(
             logger.info(f"Cập nhật uuid của khách: {chat_id} là {updated_uuid}")
 
             response = (
-                "Chào khách, em rất vui được hỗ trợ khách. Nếu khách có thắc mắc hoặc "
-                "cần tư vấn về các sản phẩm điện tử thông minh của cửa hàng, hãy cho em biết nhé! Em rất sẵn lòng giúp đỡ.\n"
-                "(đã reset hoặc tạo mới đoạn chat)."
+                "Dạ em chào mừng khách đến với AnVie Spa 🌸 – "
+                "nơi khách có thể dễ dàng đặt lịch và tìm hiểu các "
+                "dịch vụ chăm sóc sắc đẹp, thư giãn trong không gian "
+                "sang trọng, dịu nhẹ. Em rất hân hạnh được đồng hành và "
+                "hỗ trợ khách để có trải nghiệm thư giãn trọn vẹn ạ."
             )
 
             msg = {"content": response}
