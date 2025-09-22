@@ -1,8 +1,9 @@
+import traceback
+from typing import Optional, Annotated
+
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
-
-from typing import Optional, Annotated
 
 from core.graph.state import AgentState
 from database.connection import supabase_client
@@ -59,7 +60,7 @@ def cancel_booking_tool(
         )
     
     try:
-        success = appointment_repo.update_appointment_status(
+        success = appointment_repo.update_appointment(
             appointment_id=appointment_id,
             update_payload={"status": "cancelled"}
         )
@@ -88,7 +89,9 @@ def cancel_booking_tool(
             )
         )
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
     
 @tool
@@ -160,12 +163,16 @@ def get_all_editable_booking(
             )
         )
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
 
 @tool
-def alter_booking_tool(
+def edit_booking_tool(
     appointment_id: Annotated[Optional[int], "ID của lịch hẹn mà khách muốn huỷ"],
+    booking_date_new: Annotated[Optional[str], "Ngày tháng năm cụ thể khách đặt lịch"],
+    start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
@@ -174,6 +181,14 @@ def alter_booking_tool(
     
     Parameters:
         - appointment_id (int | None): ID của lịch hẹn mà khách muốn thay đổi, lấy trong book_info
+        - booking_date_new (str | None)
+            - Ngày tháng năm mà khách đặt, bắt buộc có định dạng "%Y-%m-%d".
+            - Nếu khách chỉ đổi thời gian, giữ nguyên ngày thì tham số này giữ nguyên ngày trong `book_info`.
+            - **Tham số này chấp nhận None**
+        - start_time_new (str | None)
+            - Giờ phút giây mà khách đặt, bắt buộc có định dạng "%H:%M:%S"
+            - Nếu khách chỉ đổi ngày, giữ nguyên thời gian thì tham số này giữ nguyên thời gian trong `book_info`.
+            - **Tham số này chấp nhận None**
     """
     logger.info(f"cancel_booking_tool được gọi")
     
@@ -199,36 +214,91 @@ def alter_booking_tool(
                 tool_call_id=tool_call_id
             )
         )
+        
+    if not booking_date_new:
+        logger.info("Không xác định được ngày khách muốn thay đổi")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không xác định được ngày khách muốn đổi, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+            
+    if not start_time_new:
+        logger.info("Không xác định được thời gian khách muốn thay đổi")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không xác định được thời gian khách muốn đổi, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+        
+    logger.info(f"Khách đặt ngày: {booking_date_new} vào lúc: {start_time_new}")
     
     try:
-        success = appointment_repo.update_appointment_status(
+        update_payload = {}
+        if booking_date_new:
+            update_payload["booking_date"] = booking_date_new
+        if start_time_new:
+            update_payload.update(
+                {
+                    "start_time": start_time_new,
+                    "end_time": state["end_time"]
+                }
+            )
+        update_payload({
+            "room_id": state["room_id"],
+            "staff_id": state["staff_id"]
+        })
+            
+        success = appointment_repo.update_appointment(
             appointment_id=appointment_id,
-            update_payload={"status": "cancelled"}
+            update_payload=update_payload
         )
         
         if not success:
-            logger.error(f"Lỗi ở cấp DB -> Không thể huỷ lịch hẹn với ID {appointment_id}")
+            logger.error(f"Lỗi ở cấp DB -> Không thể thay đổi lịch hẹn với ID {appointment_id}")
             return Command(
                 update=build_update(
                     content=(
-                        "Không thể huỷ lịch hẹn, xin lỗi khách và hứa sẽ khắc phục sớm nhất."
+                        "Không thể thay đổi lịch hẹn, xin lỗi khách và hứa sẽ khắc phục sớm nhất."
                     ),
                     tool_call_id=tool_call_id
                 )
             )
             
-        del book_info[appointment_id]
-        logger.info(f"Huỷ lịch hẹn với ID {appointment_id} thành công")
+        appointment_details = appointment_repo.get_appointment_details(
+            appointment_id=appointment_id
+        )
+        
+        booking_detail = return_appointments(
+            appointment_details=appointment_details
+        )
+        
+        book_info = state["book_info"].copy() if state["book_info"] else {}
+        book_info[appointment_details["id"]] = update_book_info(
+            appointment_details=appointment_details
+        )
+        
+        logger.info(f"Thay đổi lịch hẹn với ID {appointment_id} thành công")
         
         return Command(
             update=build_update(
                 content=(
-                    f"Đã huỷ lịch hẹn thành công. ID lịch hẹn: {appointment_id}."
+                    "Thay đổi lịch cho khách thành công, "
+                    "đây là chi tiết lịch sau khi thay đổi của khách:\n"
+                    f"{booking_detail}\n"
                 ),
                 tool_call_id=tool_call_id,
                 book_info=book_info
             )
         )
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise

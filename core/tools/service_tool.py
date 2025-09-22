@@ -1,9 +1,11 @@
+import traceback
+from typing import Optional, Annotated
+from datetime import date, time, timedelta, datetime
+
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
 
-from typing import Optional, Annotated
-from datetime import date, time, timedelta, datetime
 
 from database.connection import supabase_client
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
@@ -119,5 +121,7 @@ def add_service_tool(
         )
         
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise

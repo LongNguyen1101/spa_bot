@@ -62,4 +62,4 @@ async def health():
 if __name__ == "__main__":
     # This will only run if you execute the file directly
     # Not when using langgraph dev
-    uvicorn.run(app, host="127.0.0.1", port=2024)
+    uvicorn.run(app, host="127.0.0.1", port=8080)

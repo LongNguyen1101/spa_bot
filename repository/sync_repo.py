@@ -88,6 +88,17 @@ class CustomerRepo:
 
         return res.data[0]["uuid"] if res.data else None
     
+    def delete_customer(self, chat_id: str) -> bool:
+        response = (
+            self.supabase_client.table('customers')
+            .delete()
+            .eq('chat_id', chat_id)
+            .execute()
+        )
+        
+        return bool(response.data)
+    
+    
 class ServiceRepo:
     def __init__(self, supabase_client: Client):
         self.supabase_client = supabase_client
@@ -313,7 +324,7 @@ class AppointmentRepo:
 
         return response.data if response.data else None
     
-    def update_appointment_status(
+    def update_appointment(
         self, 
         appointment_id: int, 
         update_payload: dict

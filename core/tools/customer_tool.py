@@ -1,8 +1,9 @@
+import traceback
+from typing import Annotated, Optional
+
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
-
-from typing import Annotated, Optional
 
 from core.graph.state import AgentState
 from core.utils.function import build_update
@@ -104,5 +105,7 @@ def modify_customer_tool(
         )
 
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise

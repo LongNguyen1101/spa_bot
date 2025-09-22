@@ -4,8 +4,9 @@ from core.tools.booking_tool import (
     resolve_weekday_to_date_tool
 )
 from core.tools.modify_booking_tool import (
+    edit_booking_tool,
     cancel_booking_tool, 
-    get_all_editable_booking
+    get_all_editable_booking,
 )
 from core.tools.service_tool import add_service_tool
 from core.tools.customer_tool import modify_customer_tool
@@ -26,7 +27,9 @@ booking_toolbox = [
 ]
 
 modify_booking_toolbox = [
+    edit_booking_tool,
     cancel_booking_tool,
     get_all_editable_booking,
-    modify_customer_tool
+    check_available_booking_tool,
+    resolve_weekday_to_date_tool,
 ]

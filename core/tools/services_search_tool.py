@@ -1,4 +1,4 @@
-import json
+import traceback
 from shutil import ExecError
 from pydantic import BaseModel, Field
 from typing import Annotated, Optional, List
@@ -141,7 +141,9 @@ def get_services_tool(
         )
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
 
 @tool
@@ -191,5 +193,7 @@ def get_qna_tool(
         )
              
     except Exception as e:
-        logger.error(f"Error: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise

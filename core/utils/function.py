@@ -180,7 +180,10 @@ def return_appointments(appointment_details: dict) -> str:
     service_detail = (
         f"Thời gian đặt: {appointment_details["booking_date"]}\n"
         f"Thơi gian bắt đầu: {appointment_details["start_time"]}\n"
-        f"Thời gian kết thúc: {appointment_details["end_time"]}\n\n"
+        f"Thời gian kết thúc: {appointment_details["end_time"]}\n"
+        f"Tổng thời gian: {appointment_details["total_time"]} phút\n"
+        f"Ghi chú: {appointment_details["note"]}\n\n"
+        
         f"Tên khách: {appointment_details["customer"]["name"]}\n"
         f"SĐT khách: {appointment_details["customer"]["phone"]}\n"
         f"Email khách: {email}\n\n"
@@ -223,6 +226,9 @@ def update_book_info(appointment_details: dict) -> BookInfo:
         booking_date=appointment_details["booking_date"],
         start_time=appointment_details["start_time"],
         end_time=appointment_details["end_time"],
+        total_time=appointment_details["total_time"],
+        note=appointment_details["note"],
+        
         status=appointment_details["status"],
         total_price=appointment_details["total_price"],
         create_date=appointment_details["create_date"],
@@ -379,11 +385,19 @@ def free_slots_with_staff(
     orders: dict, 
     room_id: int, 
     room_capacity: int, 
-    staffs, 
+    staffs: dict, 
     k: int,
     open_time_str: str = OPEN_TIME_STR, 
     close_time_str: str = CLOSE_TIME_STR, 
 ) -> list:
+    if not orders:  # orders is None or []
+        return [{
+            "start_time": open_time_str,
+            "end_time": close_time_str,
+            "free_capacity": room_capacity,
+            "free_staffs": staffs   # tất cả nhân viên
+        }]
+    
     # Lọc orders của phòng
     room_orders = [o for o in orders if o["room_id"] == room_id]
 

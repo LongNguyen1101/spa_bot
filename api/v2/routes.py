@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 
 from core.graph.build_graph import create_main_graph
 from services.utils import get_or_create_customer, stream_messages
-from services.v2.process_chat import handle_normal_chat, handle_new_chat
+from services.v2.process_chat import handle_delete_me, handle_normal_chat, handle_new_chat
 
 from log.logger_config import setup_logging
 
@@ -39,6 +39,12 @@ async def chat(request: ChatRequest):
         if any(cmd in user_input for cmd in ["/start", "/restart"]):
             return StreamingResponse(
                 handle_new_chat(chat_id=request.chat_id),
+                media_type="text/event-stream"
+            )
+        
+        if user_input == "/delete_me":
+            return StreamingResponse(
+                handle_delete_me(chat_id=request.chat_id),
                 media_type="text/event-stream"
             )
 

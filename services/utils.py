@@ -122,3 +122,21 @@ async def get_or_create_customer(chat_id: str) -> Optional[dict]:
     )
     
     return response.data[0] if response.data else None
+
+async def delete_customer(chat_id: str) -> bool:
+    """
+    Xóa khách hàng theo `chat_id`.
+
+    Args:
+        chat_id (str): Định danh cuộc hội thoại/khách hàng.
+
+    Returns:
+        bool: True nếu xóa thành công, ngược lại False.
+    """
+    response = (
+        supabase_client.table("customers")
+        .delete()
+        .eq("chat_id", chat_id)
+        .execute()
+    )
+    return bool(response.data)

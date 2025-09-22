@@ -1,4 +1,4 @@
-from ast import parse
+import traceback
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
@@ -34,7 +34,8 @@ staff_repo = StaffRepo(supabase_client=supabase_client)
 def _handle_not_start_time(
     rooms: dict,
     orders: dict,
-    staffs: dict
+    staffs: dict,
+    k: int = 1
 ) -> str:
     response = ""
     for r_id, value in rooms.items():
@@ -44,7 +45,7 @@ def _handle_not_start_time(
             room_id=r_id,
             room_capacity=value["capacity"],
             staffs=staffs,
-            k=1
+            k=k
         )
         for slot in slots:
             response += f"- {slot['start_time']} - {slot['end_time']}, free_capacity={slot['free_capacity']}\n"
@@ -57,16 +58,17 @@ def _check_available_with_end_time(
     end_time_new: str,
     orders: dict,
     rooms: dict,
-    staffs: dict
+    staffs: dict,
+    k: int = 1
 ) -> dict:
     all_slots = {}
     for r_id, value in rooms.items():
         slots = free_slots_with_staff(
-            orders,
+            orders=orders,
             room_id=r_id,
             room_capacity=value["capacity"],
             staffs=staffs,
-            k=3
+            k=k
         )
         all_slots[r_id] = slots
     
@@ -138,17 +140,27 @@ def resolve_weekday_to_date_tool(
 def check_available_booking_tool(
     booking_date_new: Annotated[Optional[str], "Ngày tháng năm cụ thể khách đặt lịch"],
     start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
+    total_time: Annotated[Optional[Optional[int]], "Tổng thời gian (phút) khách muốn đặt lịch"],
+    k: Annotated[int, "Số lượng phòng khách muốn đặt"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ):
     """
     Sử dụng tool này để kiểm tra ngày đặt và thời gian đặt của khách có còn lịch trống không
     
-    Args:
-        - booking_date_new (str | None): Ngày tháng năm mà khách đặt, bắt buộc có định dạng "%Y-%m-%d". 
-        **Tham số này chấp nhận None**
-        - start_time_new (str | None): Giờ phút giây mà khách đặt, bắt buộc có định dạng "%H:%M:%S"
-        **Tham số này chấp nhận None**
+    Parameters:
+        - booking_date_new (str | None): 
+            - Ngày tháng năm mà khách đặt, bắt buộc có định dạng "%Y-%m-%d". 
+            - **Tham số này chấp nhận None**
+        - start_time_new (str | None): 
+            - Giờ phút giây mà khách đặt, bắt buộc có định dạng "%H:%M:%S"
+            - **Tham số này chấp nhận None**
+        - total_time (int | None): 
+            - Tổng thời gian (phút) khách muốn đặt lịch.
+            - Mặc địng là None trong quá trình khách lên lịch
+            - Nếu khách muốn thay đổi lịch đặt thì tham số này sẽ được cung cấp trong thông tin `book_info`
+        - k (int | None): Số lượng khách muốn đặt, nếu khách không đề cập thì mặc định là 1
+        
     """
     logger.info(f"check_available_booking được gọi")
     
@@ -178,7 +190,8 @@ def check_available_booking_tool(
             response = _handle_not_start_time(
                 rooms=rooms,
                 orders=orders,
-                staffs=staffs
+                staffs=staffs,
+                k=k
             )
 
             logger.info("Tìm khung thời gian trống thành công")
@@ -201,10 +214,15 @@ def check_available_booking_tool(
         parse_start_time = parse_time(start_time_new)
         dt_start = datetime.combine(parse_booking_date, parse_start_time)
         
-        if state["total_time"]:
-            dt_end = dt_start + timedelta(minutes=state["total_time"])
+        if not total_time:
+            if state["total_time"]:
+                dt_end = dt_start + timedelta(minutes=state["total_time"])
+            else:
+                dt_end = dt_start + timedelta(minutes=60)
         else:
-            dt_end = dt_start + timedelta(minutes=60)
+            dt_end = dt_start + timedelta(minutes=total_time)
+        
+        logger.info(f"Tổng thời gian khách muốn đặt: {dt_end} phút")
         end_time_new = time_to_str(dt_end)
 
         available = _check_available_with_end_time(
@@ -212,7 +230,8 @@ def check_available_booking_tool(
             end_time_new=end_time_new,
             orders=orders,
             rooms=rooms,
-            staffs=staffs
+            staffs=staffs,
+            k=k
         )
 
         if not available["room_id"] or not available["staff_id"]:
@@ -243,17 +262,24 @@ def check_available_booking_tool(
             )
         )
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
     
 @tool
 def create_appointment_tool(
+    note: Annotated[str, "Ghi chú của khách cho lịch hẹn"],
+    companion_name: Annotated[Optional[str], "Tên người đi cùng khách"],
+    companion_phone: Annotated[Optional[str], "Số điện thoại người đi cùng khách"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
     """Sử dụng tool này để thêm lịch hẹn cho khách
-
-    Chức năng: Tạo một đơn hàng mới dựa trên các sản phẩm có trong giỏ hàng và thông tin khách hàng (tên, SĐT, địa chỉ) đã được lưu trong state.
+    Parameters:
+        - note (str): Ghi chú của khách cho lịch hẹn, nếu khách không có ghi chú thì tham số này có giá trị "Không có"
+        - companion_name (str | None): Tên người đi cùng khách, nếu khách không có người đi cùng thì tham số này có giá trị None
+        - companion_phone (str | None): Số điện thoại người đi cùng khách, nếu khách không có người đi cùng thì tham số này có giá trị None
     """
     logger.info("create_appointment_tool được gọi")
     
@@ -301,9 +327,13 @@ def create_appointment_tool(
             "booking_date": state["booking_date"],
             "start_time": state["start_time"],
             "end_time": state["end_time"],
+            "total_time": state["total_time"],
             "status": "booked",
             "total_price": state["total_price"],
-            "staff_id": state["staff_id"]
+            "staff_id": state["staff_id"],
+            "note": note,
+            "companion_name": companion_name,
+            "companion_phone": companion_phone
         }
         
         appointment_res = appointment_repo.create_appointment(
@@ -316,7 +346,8 @@ def create_appointment_tool(
                 update=build_update(
                     content="Lỗi không thể tạo lịch đặt, xin khách thử lại"
                 ),
-                tool_call_id=tool_call_id
+                tool_call_id=tool_call_id,
+                note=note
             )
         
         new_appointment_id = appointment_res.get("id")
@@ -341,7 +372,8 @@ def create_appointment_tool(
                         "Không thể đặt lịch cho khách hàng, "
                         "xin lỗi khách và hứa sẽ khắc phục sớm nhất"
                     ),
-                    tool_call_id=tool_call_id
+                    tool_call_id=tool_call_id,
+                    note=note
                 )
             )
         
@@ -371,10 +403,13 @@ def create_appointment_tool(
                 tool_call_id=tool_call_id,
                 book_info=book_info,
                 services={},
-                seen_services={}
+                seen_services={},
+                note=note
             )
         )
 
     except Exception as e:
-        logger.error(f"Lỗi: {e}")
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise

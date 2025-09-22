@@ -1,11 +1,13 @@
+from types import GeneratorType
 import uuid
 import json
 import asyncio
 
+from httpx import delete
 from langgraph.graph import StateGraph
 
 from core.graph.state import init_state
-from services.utils import get_uuid, update_uuid
+from services.utils import delete_customer, get_uuid, update_uuid
 
 from log.logger_config import setup_logging
 
@@ -127,3 +129,41 @@ async def handle_new_chat(
         await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
         
+async def handle_delete_me(
+    chat_id: str
+):
+    """
+    Dev only (delete customer with chat id): Xóa khách hàng khỏi DB.
+
+    Args:
+        chat_id (str): Định danh cuộc hội thoại.
+
+    Yields:
+        str: Chuỗi SSE dạng `data: {...}` và token `[DONE]` khi hoàn tất.
+    """
+    try:
+        deleted_customer = await delete_customer(chat_id=chat_id)
+
+        if not deleted_customer:
+            logger.error(f"Lỗi ở cấp DB -> Không xóa khách với chat_id: {chat_id}")
+            error_dict = {"error": f"Không xóa khách với chat_id: {chat_id}"}
+            
+            yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
+        else:
+            logger.info(f"Xóa thành công khách với chat_id: {chat_id}")
+
+            response = (
+                "Dev only: Đã xóa thành công khách hàng khỏi hệ thống."
+            )
+
+            msg = {"content": response}
+            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+        
+    except Exception as e:
+        logger.error(f"Lỗi: {e}")
+        error_dict = {"error": str(e)}
+        yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
+        
+    finally:
+        await asyncio.sleep(0.01)
+        yield "data: [DONE]\n\n"

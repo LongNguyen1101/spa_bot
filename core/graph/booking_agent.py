@@ -27,6 +27,7 @@ class BookingAgent:
         - Thời gian đặt start_time: {start_time}
         - Các dịch vụ khách đã xem seen_products: {seen_services}
         - Các dịch vụ khách đã chọn services: {services}
+        - Ghi chú của khách note: {note}
         """
             
         self.prompt = ChatPromptTemplate.from_messages([
@@ -59,7 +60,7 @@ class BookingAgent:
             }
             
             for key in [
-                "customer_id", "name", "phone", "email", "booking_date",
+                "customer_id", "name", "phone", "email", "booking_date", "note",
                 "start_time", "end_time", "room_id", "room_name", "staff_id", "staff_name",
                 "book_info", "seen_services", "services", "total_price", "total_time"
             ]:

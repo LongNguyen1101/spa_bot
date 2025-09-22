@@ -1,7 +1,5 @@
-from flask import app
 from langgraph.graph.message import add_messages
 
-from datetime import timedelta, date, time
 from typing import Annotated, Any, TypedDict, Optional
 from langgraph.prebuilt.chat_agent_executor import AgentState as Origin_AgentState
 
@@ -38,6 +36,9 @@ class BookInfo(TypedDict):
     booking_date: str
     start_time: str
     end_time: str
+    total_time: int
+    note: str
+    
     status: str
     total_price: int
     create_date: str
@@ -72,6 +73,8 @@ class AgentState(Origin_AgentState):
     total_time: Annotated[Optional[int], _remain_value]
     
     total_price: Annotated[Optional[int], _remain_value]
+    note: Annotated[Optional[str], _remain_value]
+    
     book_info: Annotated[Optional[dict[int, BookInfo]], _remain_dict]
     
     
@@ -101,5 +104,7 @@ def init_state() -> AgentState:
         total_time=None,
         
         total_price=None,
+        note=None,
+        
         book_info=None
     )
