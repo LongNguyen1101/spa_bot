@@ -77,7 +77,8 @@ def add_service_tool(
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
     """
-    Sử dụng tool này để lưu lại các dịch vụ mà khách chọn 
+    Sử dụng tool này để lưu lại các dịch vụ mà khách chọn
+
     """
     logger.info(f"add_service_tool được gọi")
     

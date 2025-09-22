@@ -6,7 +6,7 @@ from langchain_core.tools import tool, InjectedToolCallId
 from typing import Optional, Annotated, Literal
 from datetime import date, time, timedelta, datetime
 
-from core.graph.state import AgentState
+from core.graph.state import AgentState, PreBookings
 from database.connection import supabase_client
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (

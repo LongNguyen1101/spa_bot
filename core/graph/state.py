@@ -48,6 +48,21 @@ class BookInfo(TypedDict):
     staff: Staff
     room: Room
 
+class PreBookings(TypedDict):
+    booking_date: str
+    start_time: str
+    end_time: str
+    total_time: int
+    total_price: int
+    note: str
+    
+    customer: Customer
+    staff: Staff
+    room: Room
+    
+    services: dict[int, Services]
+    
+
 class AgentState(Origin_AgentState):
     messages: Annotated[list, add_messages]
     user_input: Annotated[str, _remain_value]
@@ -75,6 +90,7 @@ class AgentState(Origin_AgentState):
     total_price: Annotated[Optional[int], _remain_value]
     note: Annotated[Optional[str], _remain_value]
     
+    pre_bookings: Annotated[Optional[dict[int, PreBookings]], _remain_dict]
     book_info: Annotated[Optional[dict[int, BookInfo]], _remain_dict]
     
     
@@ -106,5 +122,6 @@ def init_state() -> AgentState:
         total_price=None,
         note=None,
         
+        pre_bookings=None,
         book_info=None
     )
