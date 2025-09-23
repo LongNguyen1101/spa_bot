@@ -30,9 +30,11 @@ fsspec==2025.7.0
 google-ai-generativelanguage==0.6.18
 google-api-core==2.25.1
 google-auth==2.40.3
+google-auth-oauthlib==1.2.2
 googleapis-common-protos==1.70.0
 grpcio==1.74.0
 grpcio-status==1.74.0
+gspread==6.2.1
 h11==0.16.0
 h2==4.3.0
 hf-xet==1.1.8
@@ -75,6 +77,7 @@ multidict==6.6.4
 mypy_extensions==1.1.0
 nest-asyncio==1.6.0
 numpy==2.3.2
+oauthlib==3.3.1
 openai==1.101.0
 orjson==3.11.2
 ormsgpack==1.10.0
@@ -106,6 +109,7 @@ pyzmq==27.0.2
 realtime==2.7.0
 regex==2025.7.34
 requests==2.32.5
+requests-oauthlib==2.0.0
 requests-toolbelt==1.0.0
 rich==14.1.0
 rsa==4.9.1

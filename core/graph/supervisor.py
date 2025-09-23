@@ -17,10 +17,19 @@ logger = setup_logging(__name__)
 
 class Route(BaseModel):
     """Chọn agent tiếp theo để xử lý yêu cầu."""
-    next: Literal["service_agent", "booking_agent", "modify_booking_agent", "__end__"] = Field(
+    next: Literal[
+        "service_agent", 
+        "booking_agent", 
+        "modify_booking_agent", 
+        "complaint_agent",
+        "__end__"
+    ] = Field(
         description=(
             "Chọn 'service_agent' cho các câu hỏi về dịch vụ, "
             "'booking_agent' cho các tác vụ liên quan đến lên lịch đặt"
+            ", 'modify_booking_agent' để thay đổi hoặc hủy đặt chỗ, "
+            "'complaint_agent' để xử lý khiếu nại, "
+            "và '__end__' để kết thúc."
         )
     )
 

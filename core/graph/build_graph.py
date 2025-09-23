@@ -5,10 +5,12 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
+from core.graph import complaint_agent
 from core.graph.state import AgentState
 from core.graph.supervisor import Supervisor
 from core.graph.booking_agent import BookingAgent
 from core.graph.services_agent import ServiceAgent
+from core.graph.complaint_agent import ComplaintAgent
 from core.graph.modify_booking_agent import ModifyBookingAgent
 from state_management.state_cleanup_manager import StateCleanupManager
 
@@ -29,6 +31,7 @@ def create_main_graph() -> StateGraph:
     booking_agent = BookingAgent()
     modify_booking_agent = ModifyBookingAgent()
     supervisor_chain = Supervisor()
+    complaint_agent = ComplaintAgent()
 
     # Xây dựng graph
     workflow = StateGraph(AgentState)
@@ -50,6 +53,11 @@ def create_main_graph() -> StateGraph:
     workflow.add_node(
         "modify_booking_agent", 
         modify_booking_agent.modify_booking_agent_node,
+        # retry=retry_policy
+    )
+    workflow.add_node(
+        "complaint_agent", 
+        complaint_agent.complaint_agent_node,
         # retry=retry_policy
     )
 

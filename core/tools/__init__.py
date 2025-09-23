@@ -10,6 +10,7 @@ from core.tools.modify_booking_tool import (
 )
 from core.tools.service_tool import add_service_tool
 from core.tools.customer_tool import modify_customer_tool
+from core.tools.complaint_tool import send_complaint_tool
 from core.tools.services_search_tool import get_services_tool, get_qna_tool
 
 services_toolbox = [
@@ -32,4 +33,10 @@ modify_booking_toolbox = [
     get_all_editable_booking,
     check_available_booking_tool,
     resolve_weekday_to_date_tool,
+]
+
+complaint_toolbox = [
+    get_all_editable_booking,
+    modify_customer_tool,
+    send_complaint_tool
 ]

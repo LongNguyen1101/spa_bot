@@ -1,3 +1,4 @@
+import traceback
 from langgraph.types import Command
 from core.graph.state import AgentState
 from langchain_core.messages import AIMessage
@@ -62,5 +63,7 @@ class ServiceAgent:
             )
             
         except Exception as e:
-            logger.error(f"Lỗi: {e}")
+            error_details = traceback.format_exc()
+            logger.error(f"Exception: {e}")
+            logger.error(f"Chi tiết lỗi: \n{error_details}")
             raise
