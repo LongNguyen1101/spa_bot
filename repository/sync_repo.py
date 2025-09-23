@@ -98,6 +98,15 @@ class CustomerRepo:
         
         return bool(response.data)
     
+    def add_complaints(self, complaint_payload: dict) -> dict | None:
+        response = (
+            self.supabase_client.table('complaints')
+            .insert(complaint_payload)
+            .execute()
+        )
+        
+        return response.data[0] if response.data else None
+    
     
 class ServiceRepo:
     def __init__(self, supabase_client: Client):
@@ -379,6 +388,52 @@ class AppointmentRepo:
                 )
             """)
             .eq("status", "booked")
+            .eq("customer_id", customer_id)
+            .order("booking_date", desc=False)
+            .execute()
+        )
+        
+        return response.data if response.data else None
+    
+    def get_all_appointments(self, customer_id: int) -> list[dict] | None:
+        """
+        Lấy tất cả các lịch hẹn có mọi trạng thái theo customer_id.
+
+        Args:
+            - customer_id (int): ID của khách hàng.
+
+        Returns:
+            - list[dict] | None: Danh sách các lịch hẹn hoặc None nếu không có lịch nào.
+        """
+        response = (
+            self.supabase_client
+            .table("appointments")
+            .select("""
+                *,
+                appointment_services (
+                    services (
+                        id,
+                        type,
+                        name,
+                        duration_minutes,
+                        price
+                    )
+                ),
+                customer:customers!fk_appointments_customer (
+                    id,
+                    name,
+                    phone,
+                    email
+                ),
+                staff:staffs!fk_appointments_staff (
+                    id,
+                    name
+                ),
+                room:rooms!fk_appointments_room (
+                    id,
+                    name
+                )
+            """)
             .eq("customer_id", customer_id)
             .order("booking_date", desc=False)
             .execute()

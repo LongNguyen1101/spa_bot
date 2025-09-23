@@ -31,7 +31,7 @@ class BookingAgent:
         """
             
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt + context),
+            ("system", context + system_prompt),
             MessagesPlaceholder(variable_name="messages")
         ])
         

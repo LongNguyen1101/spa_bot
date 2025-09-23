@@ -126,3 +126,82 @@ def add_service_tool(
         logger.error(f"Exception: {e}")
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
+    
+@tool
+def remove_service_tool(
+    service_id_list: Annotated[Optional[list[int]], (
+        "Đây là danh sách các id của các dịch vụ mà khách muốn xóa, "
+        "được lấy trong danh sách seen_services"
+    )],
+    state: Annotated[AgentState, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId]
+) -> Command:
+    """
+    Sử dụng tool này để xóa các dịch vụ mà khách không muốn làm nữa
+    
+    Parameters:
+        - service_id_list: danh sách các id của các dịch vụ mà khách muốn xóa
+
+    """
+    logger.info(f"remove_service_tool được gọi")
+    
+    if not service_id_list:
+        logger.info("Không xác định được dịch vụ khách muốn xóa")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không biết khách muốn xóa dịch vụ nào, hỏi lại khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+        
+    try:
+        if not state["services"]:
+            logger.info("Danh sách services rỗng -> không thể xóa")
+            return Command(
+                update=build_update(
+                    content=(
+                        "Khách chưa chọn dịch vụ nào, không thể xóa"
+                    ),
+                    tool_call_id=tool_call_id
+                )
+            )
+        
+        for id in service_id_list:
+            if id in state["services"]:
+                del state["services"][id]
+        
+        total_time = 0
+        total_price = 0
+        
+        for service in state["services"].values():
+            total_time += service.duration_minutes
+            total_price += service.price
+            
+        service_detail = _return_selective_services(
+            services=state["services"],
+            total_time=total_time,
+            total_price=total_price
+        )
+        
+        logger.info("Xóa dịch vụ khách không muốn làm nữa thành công")
+        
+        return Command(
+            update=build_update(
+                content=(
+                    "Đây là thông tin các dịch vụ còn lại mà khách chọn:\n"
+                    f"{service_detail}\n"
+                ),
+                tool_call_id=tool_call_id,
+                services=state["services"],
+                total_time=total_time,
+                total_price=total_price
+            )
+        )
+        
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+        raise

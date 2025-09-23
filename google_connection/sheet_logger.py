@@ -1,15 +1,24 @@
+import os
 import time
 import json
 import gspread
 from typing import Literal
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
+load_dotenv()
+
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
+CREDS_PATH = os.getenv("CREDS_PATH")
+WORKSHEET_NAME = os.getenv("WORKSHEET_NAME")
+
 class SheetLogger:
-    def __init__(self, creds_path: str, spreadsheet_id: str, worksheet_name: str = 'Sheet1'):
-        self.creds_path = creds_path
-        self.spreadsheet_id = spreadsheet_id
-        self.worksheet_name = worksheet_name
+    def __init__(self):
+        self.creds_path = CREDS_PATH
+        self.spreadsheet_id = SPREADSHEET_ID
+        self.worksheet_name = WORKSHEET_NAME
         self.client = None
         self.worksheet = None
         self._connect()
@@ -32,8 +41,8 @@ class SheetLogger:
         self, 
         customer_id: str,
         chat_id: str,
-        name: str,
-        phone: str,
+        customer_name: str,
+        customer_phone: str,
         chat_histories: list,
         summary: str,
         type: Literal[
@@ -46,19 +55,25 @@ class SheetLogger:
         priority: Literal["low", "medium", "high"] = "medium",
         platform: str = "telegram",
     ):
-        now = datetime.now(timezone.utc).isoformat(timespec='seconds')
+        vn_tz = ZoneInfo("Asia/Ho_Chi_Minh")
+        now_vn = datetime.now(vn_tz).replace(microsecond=0)
+        
+        date_str = now_vn.strftime("%d-%m-%Y")
+        time_str = now_vn.strftime("%H:%M:%S")  
+        
         row = [
             customer_id,
             chat_id,
-            name,
-            phone,
+            customer_name,
+            customer_phone,
             platform,
             json.dumps(chat_histories, ensure_ascii=False),
             summary,
             appointment_id,
             type,
             priority,
-            now
+            date_str,
+            time_str
         ]
         try:
             self.worksheet.insert_row(row, index=2, value_input_option='USER_ENTERED')
