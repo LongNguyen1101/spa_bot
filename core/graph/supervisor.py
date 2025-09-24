@@ -81,6 +81,7 @@ class Supervisor:
                         "phone": customer.get("phone"),
                         "emai": customer.get("email")
                     })
+                    state["customer_id"] = customer.get("id")
             else:
                 logger.info(
                     "Thông tin của khách: "
@@ -92,10 +93,11 @@ class Supervisor:
             # Check the customer is new or not
             if state["new_customer"] is None:
                 update["new_customer"] = self.customer_repo.is_new_customer(
-                    customer_id=update.get("customer_id", 0)
+                    customer_id=state.get("customer_id", 0)
                 )
+                state["new_customer"] = update["new_customer"]
             
-            logger.info(f"New customer: {state["new_customer"] if state["new_customer"] is not None else update.get("new_customer")}")
+            logger.info(f"New customer: {state["new_customer"]}")
             logger.info(f"Yêu cầu của khách: {state["user_input"]}")
             
             result = self.chain.invoke(state)
