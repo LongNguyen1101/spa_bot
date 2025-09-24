@@ -205,8 +205,8 @@ def remove_service_tool(
         total_price = 0
         
         for service in state["services"].values():
-            total_time += service.duration_minutes
-            total_price += service.price
+            total_time += service["duration_minutes"]
+            total_price += service["price"]
             
         total_discount, price_after_discount, explain = cal_discount(
             total_price=total_price,

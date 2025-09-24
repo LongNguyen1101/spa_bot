@@ -19,9 +19,9 @@ Analyze the user's request and the information in the state to route the convers
 
 ### Decision Workflow (MUST follow strictly)
 
-You MUST follow this decision procedure step by step:
+You NEED to use the conversation between the chatbot and the customer, along with the customer's request, to choose the correct agent. Especially between `booking_agent` and `modify_booking_agent`, you need to carefully determine whether the situation is part of a new booking flow or related to modifying an existing booking of the customer.
 
-**Step 1 — Determine the user's main intent**
+**Determine the user's main intent**
 
 1. **If the intent is GENERAL ADVICE or INFORMATION:**
    * Indicators: user asks about service details, pricing, policies, or general advice.
@@ -41,6 +41,8 @@ You MUST follow this decision procedure step by step:
       * User requests to book for multiple people (number of people ≥ 2).
       * User provides input or requests outside of the chatbot’s supported capabilities.
    * **DECISION:** Route to `fallback_agent`.
+
+**TIP**: If the customer mentions a service and its name is found in `services`, you should choose `booking_agent` because the customer has not yet booked that service, so it is still available for booking.
 
 
 ### General rules

@@ -250,10 +250,13 @@ def edit_booking_tool(
                     "end_time": state["end_time"]
                 }
             )
-        update_payload({
-            "room_id": state["room_id"],
-            "staff_id": state["staff_id"]
-        })
+            
+        update_payload.update(
+            {
+                "room_id": state["room_id"],
+                "staff_id": state["staff_id"]
+            }
+        )
             
         success = appointment_repo.update_appointment(
             appointment_id=appointment_id,
