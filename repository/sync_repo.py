@@ -107,6 +107,16 @@ class CustomerRepo:
         
         return response.data[0] if response.data else None
     
+    def is_new_customer(self, customer_id: int) -> bool:
+        response = (
+            self.supabase_client.table('appointments')
+            .select('id')
+            .eq('customer_id', customer_id)
+            .execute()
+        )
+        
+        return False if response.data else True
+    
     
 class ServiceRepo:
     def __init__(self, supabase_client: Client):

@@ -332,6 +332,8 @@ def create_appointment_tool(
             "total_price": state["total_price"],
             "staff_id": state["staff_id"],
             "note": note,
+            "total_discount": state["total_discount"],
+            "price_after_discount": state["price_after_discount"],
             "companion_name": companion_name,
             "companion_phone": companion_phone
         }
@@ -404,7 +406,8 @@ def create_appointment_tool(
                 book_info=book_info,
                 services={},
                 seen_services={},
-                note=note
+                note=note,
+                new_customer=False,
             )
         )
 

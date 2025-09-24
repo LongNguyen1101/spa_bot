@@ -21,14 +21,14 @@ class Route(BaseModel):
         "service_agent", 
         "booking_agent", 
         "modify_booking_agent", 
-        "complaint_agent",
+        "fallback_agent",
         "__end__"
     ] = Field(
         description=(
             "Chọn 'service_agent' cho các câu hỏi về dịch vụ, "
             "'booking_agent' cho các tác vụ liên quan đến lên lịch đặt"
             ", 'modify_booking_agent' để thay đổi hoặc hủy đặt chỗ, "
-            "'complaint_agent' để xử lý khiếu nại, "
+            "'fallback_agent' để xử lý các trường hợp chatbot không thể xử lý được, "
             "và '__end__' để kết thúc."
         )
     )
@@ -89,6 +89,13 @@ class Supervisor:
                     f"- Email: {state["email"]}"
                 )
             
+            # Check the customer is new or not
+            if state["new_customer"] is None:
+                update["new_customer"] = self.customer_repo.is_new_customer(
+                    customer_id=update.get("customer_id", 0)
+                )
+            
+            logger.info(f"New customer: {state["new_customer"] if state["new_customer"] is not None else update.get("new_customer")}")
             logger.info(f"Yêu cầu của khách: {state["user_input"]}")
             
             result = self.chain.invoke(state)

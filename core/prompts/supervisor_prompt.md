@@ -9,7 +9,7 @@ Analyze the user's request and the information in the state to route the convers
 * `service_agent`: Expert for general spa information and service descriptions.
 * `booking_agent`: Expert for selecting services and creating new bookings.
 * `modify_booking_agent`: Expert for handling already-created bookings (edits, cancellations).
-* `complaint_agent`: Expert in handling customer complaints and forwarding them to the admin for resolution.
+* `fallback_agent`: Expert in handling customer complaints and forwarding them to the admin for resolution.
 
 ### Input
 
@@ -35,9 +35,13 @@ You MUST follow this decision procedure step by step:
    * Indicators: user asks to change time, change services for a confirmed booking, or cancel a booking.
    * **DECISION:** Route to `modify_booking_agent`.
 
-4. **If the intent is COMPLAINT ABOUT SPA SERVICES:**
-   * Indicators: user expresses dissatisfaction, reports an issue, or submits a complaint regarding spa services. User requests to make a booking for two or more people at the same time.
-   * **DECISION:** Route to `complaint_agent`.
+4. **If the intent is FALLBACK CASES:**
+   * Indicators:
+      * User complains about spa services, expresses dissatisfaction, or reports an issue.
+      * User requests to book for multiple people (number of people ≥ 2).
+      * User provides input or requests outside of the chatbot’s supported capabilities.
+   * **DECISION:** Route to `fallback_agent`.
+
 
 ### General rules
 

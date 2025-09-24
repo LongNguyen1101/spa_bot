@@ -11,7 +11,7 @@ from core.tools.modify_booking_tool import (
 from core.tools.customer_tool import modify_customer_tool
 from core.tools.service_tool import add_service_tool, remove_service_tool
 from core.tools.services_search_tool import get_services_tool, get_qna_tool
-from core.tools.complaint_tool import send_complaint_tool, get_all_booking_tool
+from core.tools.fallback_tool import send_fallback_tool, get_all_booking_tool
 
 services_toolbox = [
     get_services_tool,
@@ -36,9 +36,9 @@ modify_booking_toolbox = [
     resolve_weekday_to_date_tool,
 ]
 
-complaint_toolbox = [
+fallback_toolbox = [
     get_all_booking_tool,
     get_all_editable_booking,
     modify_customer_tool,
-    send_complaint_tool
+    send_fallback_tool
 ]

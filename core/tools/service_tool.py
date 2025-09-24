@@ -1,15 +1,11 @@
 import traceback
 from typing import Optional, Annotated
-from datetime import date, time, timedelta, datetime
 
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
 
-
-from database.connection import supabase_client
-from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
-from core.utils.function import build_update, time_to_str, date_to_str
+from core.utils.function import build_update, cal_discount
 from core.graph.state import AgentState, BookInfo, Customer, Services, Staff
 
 from log.logger_config import setup_logging
@@ -19,7 +15,10 @@ logger = setup_logging(__name__)
 def _return_selective_services(
     services: dict,
     total_time: int,
-    total_price: int
+    total_price: int,
+    total_discount: float = 0.0,
+    explain: str = "",
+    price_after_discount: int = 0,
 ) -> str:
     index = 1
     service_detail = ""
@@ -30,7 +29,7 @@ def _return_selective_services(
             f"Loại dịch vụ: {services[service_key]["service_type"]}\n"
             f"Tên dịch vụ: {services[service_key]["service_name"]}\n"
             f"Thời gian: {services[service_key]["duration_minutes"]}\n"
-            f"Giá: {services[service_key]["price"]}\n"
+            f"Giá: {services[service_key]["price"]}\n\n"
         )
         
         index += 1
@@ -40,14 +39,21 @@ def _return_selective_services(
         f"Tổng giá tiền: {total_price}\n"
     )
     
+    if total_discount != 0.0:
+        service_detail += (
+            f"Giảm giá: {total_discount}%\n"
+            f"Chi tiết giảm giá: \n{explain}\n"
+            f"Tổng tiền sau giảm: {int(price_after_discount)}\n"
+        )
+    
     return service_detail
 
 def _update_services_state(
-    services_state: dict,
+    services_state: dict | None,
     seen_services: dict,
     service_id_list: list[dict]
 ) -> tuple[dict, int, int]:
-    if services_state is not None:
+    if services_state is None:
         services_state = {}
 
     total_time = 0
@@ -78,6 +84,11 @@ def add_service_tool(
 ) -> Command:
     """
     Sử dụng tool này để lưu lại các dịch vụ mà khách chọn
+    
+    Parameters:
+        - service_id_list: 
+            - Danh sách các id của các dịch vụ mà khách chọn. 
+            - Nhìn vào danh sách seen_services, tìm dịch vụ nào có tên tương ứng với yêu cầu của khách và lấy id của dịch vụ đó.
 
     """
     logger.info(f"add_service_tool được gọi")
@@ -94,18 +105,33 @@ def add_service_tool(
         )
         
     try:
-        services_state, total_time, total_price = _update_services_state(
-            services_state=state["services"] if state["services"] is not None else {},  
+        services_state, new_total_time, new_total_price = _update_services_state(
+            services_state=state["services"],
             seen_services=state["seen_services"],
             service_id_list=service_id_list
         )
         
         logger.info("Thêm dịch vụ khách chọn vào state thành công")
         
+        old_total_time = state["total_time"] if state["total_time"] is not None else 0
+        old_total_price = state["total_price"] if state["total_price"] is not None else 0
+        
+        total_time = old_total_time + new_total_time
+        total_price = old_total_price + new_total_price
+        
+        total_discount, price_after_discount, explain = cal_discount(
+            total_price=total_price,
+            services_len=services_state.__len__(),
+            new_customer=state["new_customer"]
+        )
+        
         service_detail = _return_selective_services(
             services=services_state,
-            total_time=state["total_time"] + total_time if state["total_time"] is not None else total_time,
-            total_price=state["total_price"] + total_price if state["total_price"] is not None else total_price
+            total_time=total_time,
+            total_price=total_price,
+            total_discount=total_discount,
+            explain=explain,
+            price_after_discount=price_after_discount
         )
         
         return Command(
@@ -117,7 +143,10 @@ def add_service_tool(
                 tool_call_id=tool_call_id,
                 services=services_state,
                 total_time=total_time,
-                total_price=total_price
+                total_price=total_price,
+                total_discount=total_discount,
+                price_after_discount=price_after_discount,
+                explain=explain
             )
         )
         
@@ -179,10 +208,19 @@ def remove_service_tool(
             total_time += service.duration_minutes
             total_price += service.price
             
+        total_discount, price_after_discount, explain = cal_discount(
+            total_price=total_price,
+            services_len=state["services"].__len__(),
+            new_customer=state["new_customer"]
+        )
+        
         service_detail = _return_selective_services(
             services=state["services"],
             total_time=total_time,
-            total_price=total_price
+            total_price=total_price,
+            total_discount=total_discount,
+            explain=explain,
+            price_after_discount=price_after_discount
         )
         
         logger.info("Xóa dịch vụ khách không muốn làm nữa thành công")
@@ -196,7 +234,10 @@ def remove_service_tool(
                 tool_call_id=tool_call_id,
                 services=state["services"],
                 total_time=total_time,
-                total_price=total_price
+                total_price=total_price,
+                total_discount=total_discount,
+                price_after_discount=price_after_discount,
+                explain=explain
             )
         )
         

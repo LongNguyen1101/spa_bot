@@ -41,6 +41,8 @@ class BookInfo(TypedDict):
     
     status: str
     total_price: int
+    total_discount: float
+    price_after_discount: int
     create_date: str
 
     services: dict[int, Services]
@@ -74,6 +76,7 @@ class AgentState(Origin_AgentState):
     name: Annotated[Optional[str], _remain_value]
     phone: Annotated[Optional[str], _remain_value]
     email: Annotated[Optional[str], _remain_value]
+    new_customer: Annotated[Optional[bool], _remain_value]
     
     seen_services: Annotated[Optional[dict[int, Services]], _remain_dict]
     services: Annotated[Optional[dict[int, Services]], _remain_dict]
@@ -89,6 +92,10 @@ class AgentState(Origin_AgentState):
     
     total_price: Annotated[Optional[int], _remain_value]
     note: Annotated[Optional[str], _remain_value]
+    
+    total_discount: Annotated[Optional[float], _remain_value]
+    price_after_discount: Annotated[Optional[int], _remain_value]
+    explain: Annotated[Optional[str], _remain_value]
     
     pre_bookings: Annotated[Optional[dict[int, PreBookings]], _remain_dict]
     book_info: Annotated[Optional[dict[int, BookInfo]], _remain_dict]
@@ -106,6 +113,7 @@ def init_state() -> AgentState:
         name=None,
         phone=None,
         email=None,
+        new_customer=None,
         
         seen_services=None,
         services=None,
@@ -121,6 +129,10 @@ def init_state() -> AgentState:
         
         total_price=None,
         note=None,
+        
+        total_discount=None,
+        price_after_discount=None,
+        explain=None,
         
         pre_bookings=None,
         book_info=None

@@ -5,16 +5,16 @@ from langchain_core.messages import AIMessage
 from langgraph.prebuilt import create_react_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from core.tools import complaint_toolbox
+from core.tools import fallback_toolbox
 from database.connection import specialist_llm 
 
 from log.logger_config import setup_logging
 
 logger = setup_logging(__name__)
 
-class ComplaintAgent:
+class FallbackAgent:
     def __init__(self):
-        with open("core/prompts/complaint_agent_prompt.md", "r", encoding="utf-8") as f:
+        with open("core/prompts/fallback_agent_prompt.md", "r", encoding="utf-8") as f:
             system_prompt = f.read()
             
         context = """
@@ -32,14 +32,14 @@ class ComplaintAgent:
         
         self.agent = create_react_agent(
             model=specialist_llm,
-            tools=complaint_toolbox,
+            tools=fallback_toolbox,
             prompt=self.prompt,
             state_schema=AgentState
         )
 
-    def complaint_agent_node(self, state: AgentState) -> Command:
+    def fallback_agent_node(self, state: AgentState) -> Command:
         """
-        Xử lý các yêu cầu liên quan đến khiếu nạn của khách.
+        Xử lý các yêu cầu mà chatbot không thể xử lý được.
 
         Args:
             state (AgentState): Trạng thái hội thoại hiện tại.

@@ -1,8 +1,10 @@
+import dis
 import os
 import json
 import random
 import asyncio
 from typing import Any
+from decimal import Decimal
 from dotenv import load_dotenv
 from datetime import date, time, datetime
 
@@ -23,6 +25,11 @@ customer_repo = CustomerRepo(supabase_client=supabase_client)
 
 OPEN_TIME_STR = os.getenv("OPEN_TIME_STR", "08:00:00")
 CLOSE_TIME_STR = os.getenv("CLOSE_TIME_STR", "21:00:00")
+
+NEW_CUSTOMER_DISCOUNT = os.getenv("NEW_CUSTOMER_DISCOUNT")
+TWO_SERVICES_DISCOUNT = os.getenv("TWO_SERVICES_DISCOUNT")
+THREE_SERVICES_DISCOUNT = os.getenv("THREE_SERVICES_DISCOUNT")
+FOUR_PLUS_SERVICES_DISCOUNT = os.getenv("FOUR_PLUS_SERVICES_DISCOUNT")
 
 def build_update(
     content: str,
@@ -198,13 +205,15 @@ def return_appointments(appointment_details: dict) -> str:
             f"Loại dịch vụ: {service["services"]["type"]}\n"
             f"Tên dịch vụ: {service["services"]["name"]}\n"
             f"Thời gian: {service["services"]["duration_minutes"]}\n"
-            f"Giá: {service["services"]["price"]}\n"
+            f"Giá: {service["services"]["price"]}VNĐ\n\n"
         )
         
         index += 1
     
     service_detail += (
-        f"\nTổng giá tiền: {appointment_details["total_price"]}\n"
+        f"Tổng giá tiền: {appointment_details["total_price"]}VNĐ\n"
+        f"Giảm giá: {appointment_details["total_discount"]}%\n"
+        f"Tổng tiền sau giảm: {appointment_details["price_after_discount"]}VNĐ\n"
     )
     
     return service_detail
@@ -231,6 +240,8 @@ def update_book_info(appointment_details: dict) -> BookInfo:
         
         status=appointment_details["status"],
         total_price=appointment_details["total_price"],
+        total_discount=appointment_details["total_discount"],
+        price_after_discount=appointment_details["price_after_discount"],
         create_date=appointment_details["create_date"],
         
         services=booked_services,
@@ -490,3 +501,38 @@ def choose_room_and_staff(free_dict: dict, s_req: str, e_req: str):
                     }
     # nếu không tìm được phòng nào phù hợp
     return None
+
+def cal_discount(
+    total_price: int, 
+    services_len: int, 
+    new_customer: bool | None
+) -> tuple[float, int, str]:
+    if not new_customer:
+        new_customer = False
+    
+    total_discount = Decimal('0.0')
+    explain = ""
+    
+    if new_customer:
+        discount = Decimal(str(NEW_CUSTOMER_DISCOUNT))
+        total_discount += discount
+        explain += f"- Khách hàng mới được giảm {float(discount)*100}%\n"
+    
+    if services_len == 2:
+        discount = Decimal(str(TWO_SERVICES_DISCOUNT))
+        total_discount += discount
+        explain += f"- Sử dụng 2 dịch vụ được giảm {float(discount)*100}%\n"
+    elif services_len == 3:
+        discount = Decimal(str(THREE_SERVICES_DISCOUNT))
+        total_discount += discount
+        explain += f"- Sử dụng 3 dịch vụ được giảm {float(discount)*100}%\n"
+    elif services_len >= 4:
+        discount = Decimal(str(FOUR_PLUS_SERVICES_DISCOUNT))
+        total_discount += discount
+        explain += f"- Sử dụng 4 dịch vụ trở lên được giảm {float(discount)*100}%\n"
+    
+    price_after_discount = total_price * (1 - float(total_discount))
+    total_discount = float(total_discount) * 100
+    explain += f"- Tổng giảm giá: {total_discount}%\n"
+    
+    return total_discount, price_after_discount, explain

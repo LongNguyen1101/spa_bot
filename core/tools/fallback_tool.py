@@ -47,28 +47,32 @@ def _get_chat_histories(chat_histories: list) -> list:
     return formatted_histories
 
 @tool
-def send_complaint_tool(
-    summary: Annotated[str, "Tóm tắt nội dung khiếu nại của khách"],
+def send_fallback_tool(
+    summary: Annotated[str, "Tóm tắt nội dung yêu cầu của khách"],
     type: Annotated[Literal[
             "service_quality", 
             "hygiene_cleanliness", 
             "staff_behavior",
             "booking_scheduling"
-        ], "Loại khiếu nại"],
+        ] | None, 
+        "Loại khiếu nại, nếu có"
+    ],
     priority: Annotated[Literal["low", "medium", "high"], "Mức độ ưu tiên"],
-    appointment_id: Annotated[Optional[int], "ID đơn đặt lịch liên quan đến khiếu nại, nếu có"],
+    appointment_id: Annotated[int | None, "ID đơn đặt lịch liên quan đến khiếu nại, nếu có"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
 ) -> Command:
     """
-    Log a customer complaint to Google Sheets and notify the chatbot.
+    Log a customer request to Google Sheets and notify the chatbot.
 
     Parameters:
         - summary (str): 
-            - Short description of the complaint. 
+            - Short description of the request. 
             - Using messages and context from the conversation to summarize.
             - Using Vietnamese.
-        - type (Literal): Complaint category (service_quality, hygiene_cleanliness, staff_behavior, booking_scheduling).
+        - type (Literal | None):
+            - Complaint category (service_quality, hygiene_cleanliness, staff_behavior, booking_scheduling).
+            - If customer's request is not a complaint, set to None.
         - priority (Literal): Urgency level (low, medium, high).
         - appointment_id (int, optional): Related order ID in book_info, if applicable.
 
