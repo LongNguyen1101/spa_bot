@@ -190,7 +190,7 @@ def edit_booking_tool(
             - Nếu khách chỉ đổi ngày, giữ nguyên thời gian thì tham số này giữ nguyên thời gian trong `book_info`.
             - **Tham số này chấp nhận None**
     """
-    logger.info(f"cancel_booking_tool được gọi")
+    logger.info(f"edit_booking_tool được gọi")
     
     if not appointment_id:
         logger.info("Không xác định được lịch hẹn khách muốn huỷ")

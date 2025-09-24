@@ -84,7 +84,7 @@ def send_fallback_tool(
             chat_id=state["chat_id"],
             customer_name=state["name"],
             customer_phone=state["phone"],
-            chat_histories=_get_chat_histories(state["messages"]),
+            chat_histories=_get_chat_histories(state["messages"][-5:]),
             summary=summary,
             type=type,
             appointment_id=appointment_id,
