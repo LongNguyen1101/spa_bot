@@ -44,6 +44,8 @@ You NEED to use the conversation between the chatbot and the customer, along wit
 
 **TIP**: If the customer mentions a service and its name is found in `services`, you should choose `booking_agent` because the customer has not yet booked that service, so it is still available for booking.
 
+If the customer thank for the customer service, route to `service_agent`
+
 
 ### General rules
 
