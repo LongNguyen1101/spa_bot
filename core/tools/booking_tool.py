@@ -6,18 +6,16 @@ from langchain_core.tools import tool, InjectedToolCallId
 from typing import Optional, Annotated, Literal
 from datetime import date, time, timedelta, datetime
 
-from core.graph.state import AgentState, PreBookings
 from database.connection import supabase_client
+from core.graph.state import AgentState, PreBookings
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
     build_update,
     choose_room_and_staff,
-    free_slots_all,
     free_slots_with_staff,
     parese_date,
     parse_time, 
     time_to_str, 
-    date_to_str,
     return_appointments,
     update_book_info
 )
@@ -122,12 +120,26 @@ def resolve_weekday_to_date_tool(
     ref_wd = reference_date.weekday()  # 0..6
 
     days_until = (wd - ref_wd) % 7
+    if wd < ref_wd:
+        next_week -= 1
+        
+    if next_week < 0:
+        logger.error(f"Ngày khách đặt đã qua: {target_date.isoformat()}")
+        return Command(
+            update=build_update(
+                content=(
+                    f"Không thể đặt ngày: {target_date.isoformat()}, "
+                    "vì ngày này đã qua"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
     
     additional_weeks = next_week - 1
     total_days = days_until + additional_weeks * 7
-
     target_date = reference_date + timedelta(days=total_days)
     
+    logger.info(f"Ngày khách đặt: {target_date.isoformat()}")
     return Command(
         update=build_update(
             content=f"Ngày khách đặt: {target_date.isoformat()}",
@@ -138,9 +150,9 @@ def resolve_weekday_to_date_tool(
 
 @tool
 def check_available_booking_tool(
-    booking_date_new: Annotated[Optional[str], "Ngày tháng năm cụ thể khách đặt lịch"],
-    start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
-    total_time: Annotated[Optional[Optional[int]], "Tổng thời gian (phút) khách muốn đặt lịch"],
+    booking_date_new: Annotated[str | None, "Ngày tháng năm cụ thể khách đặt lịch"],
+    start_time_new: Annotated[str | None, "Thời gian khách muốn đặt lịch"],
+    total_time: Annotated[int | None, "Tổng thời gian (phút) khách muốn đặt lịch"],
     k: Annotated[int, "Số lượng phòng khách muốn đặt"],
     state: Annotated[AgentState, InjectedState],
     tool_call_id: Annotated[str, InjectedToolCallId]
@@ -222,8 +234,8 @@ def check_available_booking_tool(
         else:
             dt_end = dt_start + timedelta(minutes=total_time)
         
-        logger.info(f"Tổng thời gian khách muốn đặt: {dt_end} phút")
         end_time_new = time_to_str(dt_end)
+        logger.info(f"Thời gian kết thúc: {end_time_new}")
 
         available = _check_available_with_end_time(
             start_time_new=start_time_new,

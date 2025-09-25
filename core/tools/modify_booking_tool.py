@@ -1,3 +1,4 @@
+from math import e
 import traceback
 from typing import Optional, Annotated
 
@@ -169,7 +170,7 @@ def get_all_editable_booking(
         raise
 
 @tool
-def edit_booking_tool(
+def edit_time_booking_tool(
     appointment_id: Annotated[Optional[int], "ID của lịch hẹn mà khách muốn huỷ"],
     booking_date_new: Annotated[Optional[str], "Ngày tháng năm cụ thể khách đặt lịch"],
     start_time_new: Annotated[Optional[str], "Thời gian khách muốn đặt lịch"],
@@ -190,7 +191,7 @@ def edit_booking_tool(
             - Nếu khách chỉ đổi ngày, giữ nguyên thời gian thì tham số này giữ nguyên thời gian trong `book_info`.
             - **Tham số này chấp nhận None**
     """
-    logger.info(f"edit_booking_tool được gọi")
+    logger.info(f"edit_time_booking_tool được gọi")
     
     if not appointment_id:
         logger.info("Không xác định được lịch hẹn khách muốn huỷ")
@@ -300,6 +301,77 @@ def edit_booking_tool(
                 book_info=book_info
             )
         )
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+        raise
+    
+@tool
+def edit_services_booking_tool(
+    appointment_id: Annotated[Optional[int], "ID của lịch hẹn mà khách muốn huỷ"],
+    remove_service_ids: Annotated[Optional[list[int]], "Danh sách ID dịch vụ khách muốn xoá"],
+    add_service_ids: Annotated[Optional[list[int]], "Danh sách ID dịch vụ khách muốn thêm"],
+    state: Annotated[AgentState, InjectedState],
+    tool_call_id: Annotated[str, InjectedToolCallId]
+) -> Command:
+    """
+    Sử dung tool này để thay đổi các dịch vụ mà khách đã đặt lịch
+    
+    Parameters:
+        - appointment_id (int | None): ID của lịch hẹn mà khách muốn thay đổi, lấy trong book_info
+        - remove_service_ids (list[int] | None): Danh sách ID dịch vụ khách muốn xoá. Được lấy trong `book_info`
+        - add_service_ids (list[int] | None): Danh sách ID dịch vụ khách muốn thêm. Được lấy trong `seen_services`
+    """
+    logger.info(f"edit_time_booking_tool được gọi")
+    
+    if not appointment_id:
+        logger.info("Không xác định được lịch hẹn khách muốn huỷ")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không biết khách muốn huỷ lịch hẹn nào, hỏi lại khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+    
+    book_info = state["book_info"].copy()
+    if appointment_id not in book_info:
+        logger.info(f"Lịch hẹn với ID {appointment_id} không tồn tại trong book_info")
+        return Command(
+            update=build_update(
+                content=(
+                    f"Lịch hẹn với ID {appointment_id} không tồn tại"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+        
+    if not remove_service_ids:
+        logger.info("Không xác định được dịch vụ khách muốn xoá")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không xác định được dịch vụ khách muốn xoá, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+    
+    if not add_service_ids:
+        logger.info("Không xác định được dịch vụ khách muốn thêm")
+        return Command(
+            update=build_update(
+                content=(
+                    "Không xác định được dịch vụ khách muốn thêm, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+        
+    try:
+        pass
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Exception: {e}")
