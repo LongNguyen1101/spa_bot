@@ -1,10 +1,9 @@
-from types import GeneratorType
-import uuid
 import json
+import uuid
 import asyncio
-
-from httpx import delete
+from typing import Any
 from langgraph.graph import StateGraph
+from langchain_core.messages import AIMessage
 
 from core.graph.state import init_state
 from services.utils import delete_customer, get_uuid, update_uuid
@@ -103,7 +102,10 @@ async def handle_new_chat(
 
         if not updated_uuid:
             logger.error("Lỗi ở cấp DB -> Không thể cập nhật uuid")
-            error_dict = {"error": "Lỗi không thể cập nhật uuid"}
+            error_dict = {
+                "error": "Lỗi không thể cập nhật uuid",
+                "chat_id": chat_id
+            }
             
             yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
         else:
@@ -117,12 +119,18 @@ async def handle_new_chat(
                 "hỗ trợ khách để có trải nghiệm thư giãn trọn vẹn ạ."
             )
 
-            msg = {"content": response}
+            msg = {
+                "content": response,
+                "chat_id": chat_id
+            }
             yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
         
     except Exception as e:
         logger.error(f"Lỗi: {e}")
-        error_dict = {"error": str(e), "thread_id": updated_uuid}
+        error_dict = {
+            "error": str(e),
+            "chat_id": chat_id
+        }
         yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
         
     finally:
@@ -146,7 +154,10 @@ async def handle_delete_me(
 
         if not deleted_customer:
             logger.error(f"Lỗi ở cấp DB -> Không xóa khách với chat_id: {chat_id}")
-            error_dict = {"error": f"Không xóa khách với chat_id: {chat_id}"}
+            error_dict = {
+                "error": f"Không xóa khách với chat_id: {chat_id}",
+                "chat_id": chat_id
+            }
             
             yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
         else:
@@ -156,14 +167,65 @@ async def handle_delete_me(
                 "Dev only: Đã xóa thành công khách hàng khỏi hệ thống."
             )
 
-            msg = {"content": response}
+            msg = {
+                "content": response,
+                "chat_id": chat_id
+            }
             yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
         
     except Exception as e:
         logger.error(f"Lỗi: {e}")
-        error_dict = {"error": str(e)}
+        error_dict = {
+            "content": f"Error: {str(e)}",
+            "chat_id": chat_id
+        }
         yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
         
     finally:
         await asyncio.sleep(0.01)
         yield "data: [DONE]\n\n"
+        
+async def stream_messages(events: Any, chat_id: str):
+    """
+    Chuyển đổi luồng sự kiện từ graph thành SSE để client nhận theo thời gian thực.
+
+    Parameters:
+        - events (Any): Async iterator sự kiện từ graph.astream.
+        - chat_id (str): Định danh cuộc hội thoại.
+
+    Yields:
+        str: Chuỗi SSE dạng `data: {...}\n\n`.
+    """
+    last_printed = None
+    closed = False
+
+    try:
+        async for data in events:
+            for key, value in data.items():
+                    messages = value.get("messages", [])
+                    if not messages:
+                        continue
+
+                    last_msg = messages[-1]
+                    if isinstance(last_msg, AIMessage):
+                        content = last_msg.content.strip()
+                        if content and content != last_printed:
+                            last_printed = content
+                            msg = {
+                                "content": content,
+                                "chat_id": chat_id
+                            }
+                            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+                            await asyncio.sleep(0.01)  # slight delay for smoother streaming
+    except GeneratorExit:
+        closed = True
+        raise
+    except Exception as e:
+        error_dict = {
+            "error": str(e),
+            "chat_id": chat_id
+        }
+        yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
+    finally:
+        if not closed:
+            yield "data: [DONE]\n\n"
