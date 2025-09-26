@@ -1,20 +1,22 @@
-import json
+import os
 import uuid
-import asyncio
+import aiohttp
 import traceback
 from typing import Any, TypedDict
 from langgraph.graph import StateGraph
-from langchain_core.messages import AIMessage
 
 from core.graph.state import init_state
 from services.utils import delete_customer, get_uuid, update_uuid
 
 from log.logger_config import setup_logging
+from dotenv import load_dotenv
 
+load_dotenv()
 logger = setup_logging(__name__)
 
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
 class ResponseModel(TypedDict):
-    chat_id: str
     content: str | None
     error: str | None   
 
@@ -61,7 +63,6 @@ async def handle_normal_chat(
         if not thread_id:
             logger.error("Lỗi ở cấp DB -> không lấy được uuid")
             return ResponseModel(
-                chat_id=chat_id, 
                 content=None, 
                 error="Lỗi không thể lấy uuid"
             )
@@ -86,7 +87,6 @@ async def handle_normal_chat(
         data = result["messages"][-1].content
 
         return ResponseModel(
-            chat_id=chat_id, 
             content=data, 
             error=None
         )
@@ -97,7 +97,6 @@ async def handle_normal_chat(
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         
         return ResponseModel(
-            chat_id=chat_id,
             content=None,
             error=str(e)
         )
@@ -124,7 +123,6 @@ async def handle_new_chat(
         if not updated_uuid:
             logger.error("Lỗi ở cấp DB -> Không thể cập nhật uuid")
             return ResponseModel(
-                chat_id=chat_id,
                 content=None,
                 error="Lỗi không thể cập nhật uuid"
             )
@@ -141,7 +139,6 @@ async def handle_new_chat(
             )
 
             return ResponseModel(
-                chat_id=chat_id,
                 content=response,
                 error=None
             )
@@ -152,7 +149,6 @@ async def handle_new_chat(
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         
         return ResponseModel(
-            chat_id=chat_id,
             content=None,
             error=str(e)
         )
@@ -175,7 +171,6 @@ async def handle_delete_me(
         if not deleted_customer:
             logger.error(f"Lỗi ở cấp DB -> Không xóa khách với chat_id: {chat_id}")
             return ResponseModel(
-                chat_id=chat_id,
                 content=None,
                 error="Lỗi không thể xóa khách hàng"
             )
@@ -188,7 +183,6 @@ async def handle_delete_me(
             )
 
             return ResponseModel(
-                chat_id=chat_id,
                 content=response,
                 error=None
             )
@@ -199,52 +193,38 @@ async def handle_delete_me(
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         
         return ResponseModel(
-            chat_id=chat_id,
             content=None,
             error=str(e)
         )
         
-async def stream_messages(events: Any, chat_id: str):
+async def send_to_webhook(data: dict, chat_id: str):
     """
-    Chuyển đổi luồng sự kiện từ graph thành SSE để client nhận theo thời gian thực.
-
-    Parameters:
-        - events (Any): Async iterator sự kiện từ graph.astream.
-        - chat_id (str): Định danh cuộc hội thoại.
-
-    Yields:
-        str: Chuỗi SSE dạng `data: {...}\n\n`.
+    Gửi response data đến webhook URL
+    Args:
+        data (dict): Dữ liệu response cần gửi
+        chat_id (str): ID của chat
     """
-    last_printed = None
-    closed = False
-
     try:
-        async for data in events:
-            for key, value in data.items():
-                    messages = value.get("messages", [])
-                    if not messages:
-                        continue
-
-                    last_msg = messages[-1]
-                    if isinstance(last_msg, AIMessage):
-                        content = last_msg.content.strip()
-                        if content and content != last_printed:
-                            last_printed = content
-                            msg = {
-                                "content": content,
-                                "chat_id": chat_id
-                            }
-                            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
-                            await asyncio.sleep(0.01)  # slight delay for smoother streaming
-    except GeneratorExit:
-        closed = True
-        raise
-    except Exception as e:
-        error_dict = {
-            "error": str(e),
-            "chat_id": chat_id
+        payload = {
+            "chat_id": chat_id,
+            "response": data,
+            "timestamp": traceback.format_exc()  # Có thể thay bằng datetime.now().isoformat()
         }
-        yield f"data: {json.dumps(error_dict, ensure_ascii=False)}\n\n"
-    finally:
-        if not closed:
-            yield "data: [DONE]\n\n"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                WEBHOOK_URL, 
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status == 200:
+                    logger.info(f"Đã gửi thành công response đến webhook cho chat_id: {chat_id}")
+                else:
+                    logger.error(f"Lỗi khi gửi đến webhook. Status: {response.status}, chat_id: {chat_id}")
+                    
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+        raise

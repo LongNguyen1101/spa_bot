@@ -11,7 +11,7 @@ from services.v3.process_chat import (
     handle_delete_me, 
     handle_normal_chat, 
     handle_new_chat,
-    stream_messages
+    send_to_webhook
 )
 
 from log.logger_config import setup_logging
@@ -27,7 +27,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     status: str
-    data: dict
+    data: str
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
@@ -40,8 +40,8 @@ async def chat(request: ChatRequest):
     Returns:
         StreamingResponse: Dòng sự kiện SSE phản hồi.
     """
-    user_input = request.user_input
     chat_id = request.chat_id
+    user_input = request.user_input
     
     try:    
         customer = await get_or_create_customer(chat_id=chat_id)
@@ -51,29 +51,68 @@ async def chat(request: ChatRequest):
 
         if any(cmd in user_input for cmd in ["/start", "/restart"]):
             messages = await handle_new_chat(chat_id=chat_id)
+            
+            await send_to_webhook(data=messages, chat_id=chat_id)
+            logger.info(f"Send to webhook: {messages}")
+            
             if messages["error"]:
-                return ChatResponse(status="error", data=messages)
-            return ChatResponse(status="ok", data=messages)
+                return ChatResponse(
+                    status="error", 
+                    data="Có lỗi xảy ra khi khởi tạo chat mới"
+                )
+            return ChatResponse(
+                status="ok", 
+                data="Đã xử lý thành công"
+            )
         
         if user_input == "/delete_me":
-            deletion_result = await handle_delete_me(chat_id=chat_id)
-            if deletion_result["error"]:
-                return ChatResponse(status="error", data=deletion_result)
-            return ChatResponse(status="ok", data=deletion_result)
+            messages = await handle_delete_me(chat_id=chat_id)
+            
+            await send_to_webhook(data=messages, chat_id=chat_id)
+            logger.info(f"Send to webhook: {messages}")
+            
+            if messages["error"]:
+                return ChatResponse(
+                    status="error", 
+                    data="Có lỗi xảy ra khi xóa dữ liệu"
+                )
+            return ChatResponse(
+                status="ok", 
+                data="Đã xử lý thành công"
+            )
 
-        response = await handle_normal_chat(
+        messages = await handle_normal_chat(
             user_input=user_input,
             chat_id=chat_id,
             customer=customer,
             graph=graph
         )
-        if response["error"]:
-            return ChatResponse(status="error", data=response)
-        return ChatResponse(status="ok", data=response)
+        
+        await send_to_webhook(data=messages, chat_id=chat_id)
+        logger.info(f"Send to webhook: {messages}")
+        
+        if messages["error"]:
+            return ChatResponse(
+                status="error", 
+                data="Có lỗi xảy ra khi xử lý chat"
+            )
+        return ChatResponse(
+            status="ok", 
+            data="Đã xử lý thành công"
+        )
             
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Exception: {e}")
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        error_data = {
+            "content": None,
+            "error": str(e)
+        }
+        await send_to_webhook(data=error_data, chat_id=chat_id)
+        
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Internal Server Error: {str(e)}"
+        )
