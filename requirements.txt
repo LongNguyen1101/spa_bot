@@ -13,6 +13,7 @@ certifi==2025.8.3
 charset-normalizer==3.4.3
 click==8.2.1
 cohere==5.13.0
+colorama==0.4.6
 comm==0.2.3
 dataclasses-json==0.6.7
 debugpy==1.8.16
