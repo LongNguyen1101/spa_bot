@@ -28,7 +28,7 @@ class ChatResponse(BaseModel):
     status: Literal["ok", "error"]
     reply: str
 
-@router.post("/chat/inkoke", response_model=ChatResponse)
+@router.post("/chat/invoke", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse | HTTPException:
     """
     Xử lý yêu cầu chat dạng streaming (v2) có kiểm soát luồng nghiệp vụ.
