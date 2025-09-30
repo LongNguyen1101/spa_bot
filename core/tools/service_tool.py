@@ -23,20 +23,22 @@ def _return_selective_services(
     index = 1
     service_detail = ""
     
-    for service_key in services.keys():
+    for service in services.values():
         service_detail += (
             f"STT: {index}\n"
-            f"Loại dịch vụ: {services[service_key]["service_type"]}\n"
-            f"Tên dịch vụ: {services[service_key]["service_name"]}\n"
-            f"Thời gian: {services[service_key]["duration_minutes"]}\n"
-            f"Giá: {services[service_key]["price"]}\n\n"
+            f"Loại dịch vụ: {service["service_type"]}\n"
+            f"Tên dịch vụ: {service["service_name"]}\n"
+            f"Thời gian: {service["duration_minutes"]}\n"
+            f"Giá: {service["price"]} VNĐ\n"
+            f"Giảm giá: {service["discount_value"]}%\n"
+            f"Giá sau giảm: {int(service["price_after_discount"])} VNĐ\n\n"
         )
         
         index += 1
         
     service_detail += (
         f"Tổng thời gian: {total_time}\n"
-        f"Tổng giá tiền: {total_price}\n"
+        f"Tổng giá tiền: {int(total_price)} VNĐ\n"
     )
     
     if total_discount != 0.0:
@@ -66,10 +68,12 @@ def _update_services_state(
             service_name=seen_services[id]["service_name"],
             duration_minutes=seen_services[id]["duration_minutes"],
             price=seen_services[id]["price"],
+            discount_value=seen_services[id]["discount_value"],
+            price_after_discount=seen_services[id]["price_after_discount"]
         )
         
         total_time += seen_services[id]["duration_minutes"]
-        total_price += seen_services[id]["price"]
+        total_price += seen_services[id]["price_after_discount"]
     
     return services_state, total_time, total_price
 
@@ -119,19 +123,19 @@ def add_service_tool(
         total_time = old_total_time + new_total_time
         total_price = old_total_price + new_total_price
         
-        total_discount, price_after_discount, explain = cal_discount(
-            total_price=total_price,
-            services_len=services_state.__len__(),
-            new_customer=state["new_customer"]
-        )
+        # total_discount, price_after_discount, explain = cal_discount(
+        #     total_price=total_price,
+        #     services=state["services"],
+        #     new_customer=state["new_customer"]
+        # )
         
         service_detail = _return_selective_services(
             services=services_state,
             total_time=total_time,
             total_price=total_price,
-            total_discount=total_discount,
-            explain=explain,
-            price_after_discount=price_after_discount
+            # total_discount=total_discount,
+            # explain=explain,
+            # price_after_discount=price_after_discount
         )
         
         return Command(
@@ -144,9 +148,9 @@ def add_service_tool(
                 services=services_state,
                 total_time=total_time,
                 total_price=total_price,
-                total_discount=total_discount,
-                price_after_discount=price_after_discount,
-                explain=explain
+                # total_discount=total_discount,
+                # price_after_discount=price_after_discount,
+                # explain=explain
             )
         )
         
@@ -206,21 +210,21 @@ def remove_service_tool(
         
         for service in state["services"].values():
             total_time += service["duration_minutes"]
-            total_price += service["price"]
+            total_price += service["price_after_discount"]
             
-        total_discount, price_after_discount, explain = cal_discount(
-            total_price=total_price,
-            services_len=state["services"].__len__(),
-            new_customer=state["new_customer"]
-        )
+        # total_discount, price_after_discount, explain = cal_discount(
+        #     total_price=total_price,
+        #     services_len=state["services"].__len__(),
+        #     new_customer=state["new_customer"]
+        # )
         
         service_detail = _return_selective_services(
             services=state["services"],
             total_time=total_time,
             total_price=total_price,
-            total_discount=total_discount,
-            explain=explain,
-            price_after_discount=price_after_discount
+            # total_discount=total_discount,
+            # explain=explain,
+            # price_after_discount=price_after_discount
         )
         
         logger.info("Xóa dịch vụ khách không muốn làm nữa thành công")
@@ -235,9 +239,9 @@ def remove_service_tool(
                 services=state["services"],
                 total_time=total_time,
                 total_price=total_price,
-                total_discount=total_discount,
-                price_after_discount=price_after_discount,
-                explain=explain
+                # total_discount=total_discount,
+                # price_after_discount=price_after_discount,
+                # explain=explain
             )
         )
         

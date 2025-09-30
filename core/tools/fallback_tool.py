@@ -2,7 +2,7 @@ import os
 import asyncio
 import traceback
 from dotenv import load_dotenv
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal
 
 from telegram import Bot, constants
 from langgraph.types import Command

@@ -200,20 +200,26 @@ def return_appointments(appointment_details: dict) -> str:
     )
     
     for service in appointment_details["appointment_services"]:
+        price = service["services"]["price"]
+        discount_value = service["services"]["service_discounts"][0]["discount_value"]
+        price_after_discount = int(price * (1 - discount_value / 100))
+        
         service_detail += (
             f"STT: {index}\n"
             f"Loại dịch vụ: {service["services"]["type"]}\n"
             f"Tên dịch vụ: {service["services"]["name"]}\n"
             f"Thời gian: {service["services"]["duration_minutes"]}\n"
-            f"Giá: {service["services"]["price"]}VNĐ\n\n"
+            f"Giá: {price}VNĐ\n"
+            f"Giảm giá: {discount_value}%\n"
+            f"Giá sau giảm: {price_after_discount}VNĐ\n\n"
         )
         
         index += 1
     
     service_detail += (
         f"Tổng giá tiền: {appointment_details["total_price"]}VNĐ\n"
-        f"Giảm giá: {appointment_details["total_discount"]}%\n"
-        f"Tổng tiền sau giảm: {appointment_details["price_after_discount"]}VNĐ\n"
+        # f"Giảm giá: {appointment_details["total_discount"]}%\n"
+        # f"Tổng tiền sau giảm: {appointment_details["price_after_discount"]}VNĐ\n"
     )
     
     return service_detail
@@ -504,7 +510,7 @@ def choose_room_and_staff(free_dict: dict, s_req: str, e_req: str):
 
 def cal_discount(
     total_price: int, 
-    services_len: int, 
+    services: dict,
     new_customer: bool | None
 ) -> tuple[float, int, str]:
     if not new_customer:
@@ -512,12 +518,15 @@ def cal_discount(
     
     total_discount = Decimal('0.0')
     explain = ""
+    services_len = services.__len__()
     
+    # Calculate new customer discount
     if new_customer:
         discount = Decimal(str(NEW_CUSTOMER_DISCOUNT))
         total_discount += discount
         explain += f"- Khách hàng mới được giảm {float(discount)*100}%\n"
     
+    # Calculate service count discount
     if services_len == 2:
         discount = Decimal(str(TWO_SERVICES_DISCOUNT))
         total_discount += discount

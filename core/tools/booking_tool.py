@@ -344,8 +344,8 @@ def create_appointment_tool(
             "total_price": state["total_price"],
             "staff_id": state["staff_id"],
             "note": note,
-            "total_discount": state["total_discount"],
-            "price_after_discount": state["price_after_discount"],
+            "total_discount": 0,
+            "price_after_discount": state["total_price"],
             "companion_name": companion_name,
             "companion_phone": companion_phone
         }

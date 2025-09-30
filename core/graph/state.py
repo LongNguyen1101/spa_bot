@@ -16,6 +16,8 @@ class Services(TypedDict):
     service_name: str
     duration_minutes: int
     price: int
+    discount_value: float | None
+    price_after_discount: float | None
 
 class Customer(TypedDict):
     customer_id: int

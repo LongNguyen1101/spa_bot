@@ -18,6 +18,21 @@ logger = setup_logging(__name__)
 
 service_repo = ServiceRepo(supabase_client=supabase_client)
 
+def _get_services_and_discount_by_embedding(
+    query_embedding: list[float],
+    match_count: int = 5
+) -> list[dict] | None:
+
+    rag_results = service_repo.get_services_by_embedding(
+        query_embedding=query_embedding,
+        match_count=match_count
+    )
+    
+    service_id_list = [item.get("content")["id"] for item in rag_results]
+    data = service_repo.get_services_by_ids(service_id_list=service_id_list)
+    
+    return data
+
 def _update_seen_services(
     seen_services: dict, 
     services: List[dict]
@@ -35,12 +50,18 @@ def _update_seen_services(
     for service in services:
         service_id = service.get("id")
         
+        price = service["price"]
+        discount_value = service["service_discounts"][0]["discount_value"]
+        price_after_discount = price * (1 - discount_value / 100) if discount_value else price
+        
         seen_services[service_id] = Services(
             service_id=service_id,
             service_type=service["type"],
             service_name=service["name"],
             duration_minutes=service["duration_minutes"],
-            price=service["price"]
+            price=price,
+            discount_value=discount_value,
+            price_after_discount=price_after_discount
         )
     return seen_services
 
@@ -97,29 +118,21 @@ def get_services_tool(
         
         query_embedding = embeddings_model.embed_query(state["user_input"])
         
-        rag_results = service_repo.get_services_by_embedding(
+        services = _get_services_and_discount_by_embedding(
             query_embedding=query_embedding,
             match_count=5
         )
         
         # logger.info(f"RAG results: {rag_results}")
         
-        if not rag_results:
+        if not services:
             logger.info("No results from RAG")
             return Command(update=build_update(
-                content="Apologies, we couldn't find the service you're looking for.",
+                content="Apologies to the customer, couldn't find the service you're looking for.",
                 tool_call_id=tool_call_id
             ))
 
         logger.info("Results returned from RAG")
-        services = [item.get("content") for item in rag_results]
-        
-        if not services:
-            logger.info("Could not parse service from RAG json result")
-            return Command(update=build_update(
-                content="Apologies, there was an error during the service search process.",
-                tool_call_id=tool_call_id
-            ))
 
         updated_seen_services = _update_seen_services(
             seen_services=state["seen_services"] if state["seen_services"] is not None else {},

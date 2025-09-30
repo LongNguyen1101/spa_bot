@@ -128,8 +128,21 @@ class ServiceRepo:
         response = (
             self.supabase_client
             .from_("services")
-            .select("*")
+            .select("*, service_discounts(discount_value)")
             .or_(f"name.ilike.{pattern},description.ilike.{pattern},type.ilike.{pattern}")
+            .execute()
+        )
+        
+        return response.data if response.data else None
+    
+    def get_services_by_ids(self, 
+                            service_id_list: list[int]
+    ) -> list[dict] | None:
+        response = (
+            self.supabase_client
+            .table("services")
+            .select("*, service_discounts(discount_value)")
+            .in_("id", service_id_list)
             .execute()
         )
         
@@ -160,7 +173,7 @@ class ServiceRepo:
             for data in response.data
         ]
         
-        return results
+        return results    
     
     def get_qna_by_embedding(
         self, 
@@ -318,7 +331,8 @@ class AppointmentRepo:
                         type,
                         name,
                         duration_minutes,
-                        price
+                        price,
+                        service_discounts (discount_value)
                     )
                 ),
                 customer:customers!fk_appointments_customer (
