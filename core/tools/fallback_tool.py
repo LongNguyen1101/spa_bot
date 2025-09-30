@@ -1,8 +1,10 @@
 import os
+import asyncio
 import traceback
 from dotenv import load_dotenv
 from typing import Annotated, Literal, Optional
 
+from telegram import Bot, constants
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
 from langchain_core.tools import tool, InjectedToolCallId
@@ -28,9 +30,32 @@ appointment_repo = AppointmentRepo(supabase_client=supabase_client)
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_PATH = os.getenv("CREDS_PATH")
 WORKSHEET_NAME = os.getenv("WORKSHEET_NAME")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID")
 
-customer_repo = CustomerRepo(supabase_client=supabase_client)
 sheet_logger = SheetLogger()
+bot = Bot(token=TELEGRAM_TOKEN)
+customer_repo = CustomerRepo(supabase_client=supabase_client)
+
+
+
+
+async def _send_message_tele(chat_id: str, text: str):
+    logger.info(f"Sending message to chat_id {chat_id}: {text}")
+    
+    try:
+        return await bot.send_message(
+            chat_id=chat_id, 
+            text=text, 
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
+        
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+        raise
+
 
 def _get_chat_histories(chat_histories: list) -> list:
     formatted_histories = []
@@ -73,10 +98,35 @@ def send_fallback_tool(
             - Complaint category (service_quality, hygiene_cleanliness, staff_behavior, booking_scheduling).
             - If customer's request is not a complaint, set to None.
         - priority (Literal): Urgency level (low, medium, high).
+            - `low` – General inquiries or non-urgent requests where the customer is not reporting any problem.
+            - `medium` – Issues that affect the customer’s experience but are not time-critical (e.g., questions about past appointments, minor complaints).
+            - `high` – Urgent matters that require immediate attention, such as complaints about an ongoing appointment, billing errors, or service disruptions.
         - appointment_id (int, optional): Related order ID in book_info, if applicable.
 
     Returns: Command: Updates chatbot to confirm complaint submission.
     """
+    if not state["name"]:
+        logger.info("Cant find customer name")
+        return Command(
+            update=build_update(
+                content=(
+                    "Chưa có tên khách, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )
+    
+    if not state["phone"]:
+        logger.info("Cant find customer phone")
+        return Command(
+            update=build_update(
+                content=(
+                    "Chưa có số điện thoại khách, hỏi khách"
+                ),
+                tool_call_id=tool_call_id
+            )
+        )    
+
     try:
         logger.info("send_complaint_tool được gọi")
         sheet_logger.log(
@@ -109,6 +159,21 @@ def send_fallback_tool(
             }
         )
         
+        tele_type = type if type else "Không xác định"
+        tele_type = tele_type.replace("_", " ").title()
+        
+        tele_content = (
+            f"ID khách hàng: {state['customer_id']}\n"
+            f"Tên khách hàng: {state['name']}\n"
+            f"Số điện thoại: {state['phone']}\n\n"
+            
+            f"Tóm tắt khiếu nại:\n{summary}\n\n"
+            
+            f"Loại khiếu nại: {tele_type}\n"
+            f"ID đơn đặt lịch liên quan: {appointment_id if appointment_id else 'Không có'}\n"
+            f"Mức độ ưu tiên: {priority}\n"
+        )
+        
         if not response:
             logger.error("Lỗi ở cấp DB -> Không thể cập nhật khiếu nại")
             return Command(
@@ -119,6 +184,13 @@ def send_fallback_tool(
                     tool_call_id=tool_call_id
                 )
             )
+            
+        asyncio.run(_send_message_tele(
+            chat_id=ADMIN_CHAT_ID,
+            text=tele_content
+        ))
+        
+        logger.info("Send to telegram successfully")
         
         logger.info("Send to supabase successfully")
         logger.info("Send complaint successfully")
@@ -170,7 +242,7 @@ def get_all_booking_tool(
             logger.info("Không có lịch hẹn nào của khách")
             return Command(
                 update=build_update(
-                    content="Hiện tại khách chưa đặt lịch hẹn nào, có thể khách nhầm lẫn",
+                    content="Hiện tại khách chưa đặt lịch hẹn nào",
                     tool_call_id=tool_call_id
                 )
             )

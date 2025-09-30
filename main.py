@@ -8,6 +8,7 @@ from core.graph.build_graph import create_main_graph
 from api.v1.routes import router as api_router_v1
 from api.v2.routes import router as api_router_v2
 from api.v3.routes import router as api_router_v3
+from api.v4.routes import router as api_router_v4
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -41,7 +42,8 @@ app.add_middleware(
 # Include the API router with a prefix
 app.include_router(api_router_v1, prefix="/api/v1")
 app.include_router(api_router_v2, prefix="/api/v2")
-app.include_router(api_router_v3, prefix="/api/v3")
+app.include_router(api_router_v3, prefix="/api/v3") # -> telegram
+app.include_router(api_router_v4, prefix="/api/v4") # -> web
 
 # Define a root endpoint
 @app.get("/")
