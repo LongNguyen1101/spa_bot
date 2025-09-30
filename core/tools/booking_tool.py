@@ -8,6 +8,7 @@ from datetime import date, time, timedelta, datetime
 
 from database.connection import supabase_client
 from core.graph.state import AgentState, PreBookings
+from google_connection.sheet_logger import DemoLogger
 from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
     build_update,
@@ -27,7 +28,23 @@ logger = setup_logging(__name__)
 appointment_repo = AppointmentRepo(supabase_client=supabase_client)
 room_repo = RoomRepo(supabase_client=supabase_client)
 staff_repo = StaffRepo(supabase_client=supabase_client)
+demo_logger = DemoLogger()
 
+def _handle_send_to_sheet(appointment_details: dict):
+    demo_logger.log(
+        id = appointment_details["id"],
+        customer_id = appointment_details["customer_id"],
+        staff_id = appointment_details["staff_id"],
+        room_id = appointment_details["room_id"],
+        booking_date = appointment_details["booking_date"],
+        start_time = appointment_details["start_time"],
+        end_time = appointment_details["end_time"],
+        status = appointment_details["status"],
+        total_price = appointment_details["total_price"],
+        create_date = appointment_details["create_date"],
+        total_time = appointment_details["total_time"],
+        note = appointment_details["note"],
+    )
 
 def _handle_not_start_time(
     rooms: dict,
@@ -396,6 +413,10 @@ def create_appointment_tool(
         appointment_details = appointment_repo.get_appointment_details(
             appointment_id=new_appointment_id
         )
+        
+        _handle_send_to_sheet(appointment_details=appointment_details)
+        
+        logger.info("Send to demo logger successfully")
         
         booking_detail = return_appointments(
             appointment_details=appointment_details
