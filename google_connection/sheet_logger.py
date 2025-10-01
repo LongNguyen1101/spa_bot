@@ -6,6 +6,7 @@ from typing import Literal
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
+from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials
 
 from core.utils.function import convert_date_str
@@ -101,6 +102,7 @@ class DemoLogger:
         self.worksheet_name = WORKSHEET_NAME_DEMO
         self.client = None
         self.worksheet = None
+        self.sheets_service = None  # Thêm service cho Sheets API
         self._connect()
 
     def _connect(self):
@@ -109,13 +111,59 @@ class DemoLogger:
             'https://www.googleapis.com/auth/drive'
         ]
         creds = Credentials.from_service_account_file(self.creds_path, scopes=scopes)
+        
+        # Gspread client
         self.client = gspread.authorize(creds)
         sh = self.client.open_by_key(self.spreadsheet_id)
         try:
             self.worksheet = sh.worksheet(self.worksheet_name)
         except gspread.exceptions.WorksheetNotFound:
-            # nếu worksheet name không tồn tại, tạo mới
             self.worksheet = sh.add_worksheet(title=self.worksheet_name, rows="1000", cols="20")
+        
+        # Google Sheets API service
+        self.sheets_service = build('sheets', 'v4', credentials=creds)
+
+    def _merge_main_info_cells(self, start_row: int, num_rows: int):
+        """
+        Hợp nhất các cột thông tin chính theo chiều dọc
+        start_row: hàng bắt đầu (1-indexed, ví dụ: 2 cho hàng thứ 2)
+        num_rows: số hàng cần merge
+        """
+        if num_rows <= 1:
+            return  # Không cần merge nếu chỉ có 1 hàng
+        
+        # Lấy sheet_id
+        sheet_id = self.worksheet.id
+        
+        # Các cột cần merge (0-indexed):
+        # 0: ID, 1: Name, 2: Phone, 3: Email, 4: Staff, 5: Room
+        # 12: start_time, 13: end_time, 14: total_time, 15: booking_date
+        # 16: status, 17: note, 18: total_price
+        columns_to_merge = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 18]
+        
+        requests = []
+        
+        for col_index in columns_to_merge:
+            requests.append({
+                'mergeCells': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'startRowIndex': start_row - 1,  # Convert to 0-indexed
+                        'endRowIndex': start_row - 1 + num_rows,  # Exclusive
+                        'startColumnIndex': col_index,
+                        'endColumnIndex': col_index + 1  # Exclusive
+                    },
+                    'mergeType': 'MERGE_ALL'
+                }
+            })
+        
+        try:
+            self.sheets_service.spreadsheets().batchUpdate(
+                spreadsheetId=self.spreadsheet_id,
+                body={'requests': requests}
+            ).execute()
+        except Exception as e:
+            logger.error(f"Error merging cells: {e}")
 
     def log(
         self, 
@@ -165,7 +213,6 @@ class DemoLogger:
             discount_value = item["services"]["service_discounts"][0]["discount_value"]
             price_after_discount = int(price * (1 - discount_value / 100))
             
-            # indent hoặc dấu gạch để phân biệt dòng con
             row_child = [
                 "",  # id trống
                 "",  # customer_name trống
@@ -190,14 +237,29 @@ class DemoLogger:
             rows_to_append.append(row_child)
         
         try:
-            # Gspread có method append_rows để append nhiều hàng cùng lúc. :contentReference[oaicite:0]{index=0}
+            # Lấy số hàng hiện tại trước khi append
+            current_row_count = len(self.worksheet.get_all_values())
+            start_row = current_row_count + 1  # Hàng bắt đầu của data mới
+            
+            # Append rows
             self.worksheet.append_rows(rows_to_append, value_input_option='USER_ENTERED')
+            
+            # Merge cells cho thông tin chính
+            self._merge_main_info_cells(start_row, len(rows_to_append))
+            
         except Exception as e:
             logger.error(f"Error when appending multiple rows: {e}")
             time.sleep(3)
             try:
                 # fallback: append từng hàng
+                current_row_count = len(self.worksheet.get_all_values())
+                start_row = current_row_count + 1
+                
                 for r in rows_to_append:
                     self.worksheet.append_row(r, value_input_option='USER_ENTERED')
+                
+                # Merge sau khi append xong
+                self._merge_main_info_cells(start_row, len(rows_to_append))
+                
             except Exception as e2:
                 logger.error(f"Second fallback failed: {e2}")

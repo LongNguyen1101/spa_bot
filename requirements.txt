@@ -31,7 +31,9 @@ frozenlist==1.7.0
 fsspec==2025.7.0
 google-ai-generativelanguage==0.6.18
 google-api-core==2.25.1
+google-api-python-client==2.183.0
 google-auth==2.40.3
+google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.2
 googleapis-common-protos==1.70.0
 grpcio==1.74.0
@@ -42,6 +44,7 @@ h2==4.3.0
 hf-xet==1.1.8
 hpack==4.1.0
 httpcore==1.0.9
+httplib2==0.31.0
 httpx==0.28.1
 httpx-sse==0.4.0
 huggingface-hub==0.34.4
@@ -104,6 +107,7 @@ pydantic-settings==2.10.1
 pydantic_core==2.33.2
 Pygments==2.19.2
 PyJWT==2.10.1
+pyparsing==3.2.5
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-telegram-bot==22.5
@@ -139,6 +143,7 @@ types-requests==2.32.4.20250809
 typing-inspect==0.9.0
 typing-inspection==0.4.1
 typing_extensions==4.15.0
+uritemplate==4.2.0
 urllib3==2.5.0
 uvicorn==0.35.0
 wcwidth==0.2.13
