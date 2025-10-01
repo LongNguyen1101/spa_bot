@@ -224,6 +224,11 @@ def return_appointments(appointment_details: dict) -> str:
     
     return service_detail
 
+def convert_date_str(date_str: str) -> str:
+    # Chuyển từ định dạng ISO “YYYY-MM-DD” sang “DD-MM-YYYY”
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return dt.strftime("%d-%m-%Y")
+
 def update_book_info(appointment_details: dict) -> BookInfo:
     booked_services = {}
     for service in appointment_details["appointment_services"]:
@@ -506,7 +511,10 @@ def choose_room_and_staff(free_dict: dict, s_req: str, e_req: str):
                         "staff_id": None
                     }
     # nếu không tìm được phòng nào phù hợp
-    return None
+    return {
+        "room_id": None,
+        "staff_id": None
+    }
 
 def cal_discount(
     total_price: int, 

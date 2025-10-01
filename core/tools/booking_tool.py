@@ -13,6 +13,7 @@ from repository.sync_repo import AppointmentRepo, RoomRepo, StaffRepo
 from core.utils.function import (
     build_update,
     choose_room_and_staff,
+    convert_date_str,
     free_slots_with_staff,
     parese_date,
     parse_time, 
@@ -31,19 +32,14 @@ staff_repo = StaffRepo(supabase_client=supabase_client)
 demo_logger = DemoLogger()
 
 def _handle_send_to_sheet(appointment_details: dict):
+    if appointment_details["customer"]["email"]:
+        email = appointment_details["customer"]["email"]
+    else:
+        email = "Không có"
+        
     demo_logger.log(
-        id = appointment_details["id"],
-        customer_id = appointment_details["customer_id"],
-        staff_id = appointment_details["staff_id"],
-        room_id = appointment_details["room_id"],
-        booking_date = appointment_details["booking_date"],
-        start_time = appointment_details["start_time"],
-        end_time = appointment_details["end_time"],
-        status = appointment_details["status"],
-        total_price = appointment_details["total_price"],
-        create_date = appointment_details["create_date"],
-        total_time = appointment_details["total_time"],
-        note = appointment_details["note"],
+        booking_info=appointment_details,
+        service_items=appointment_details["appointment_services"]
     )
 
 def _handle_not_start_time(

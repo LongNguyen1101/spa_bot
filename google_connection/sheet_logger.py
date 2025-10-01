@@ -8,6 +8,11 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 from google.oauth2.service_account import Credentials
 
+from core.utils.function import convert_date_str
+from log.logger_config import setup_logging
+
+logger = setup_logging(__name__)
+
 load_dotenv()
 
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
@@ -114,41 +119,85 @@ class DemoLogger:
 
     def log(
         self, 
-        id: str,
-        customer_id: str,
-        staff_id: str,
-        room_id: str,
-        booking_date: str,
-        start_time: str,
-        end_time: str,
-        status: str,
-        total_price: str,
-        create_date: str,
-        total_time: str,
-        note: str
-    ):    
-        row = [
-            id,
-            customer_id,
-            staff_id,
-            room_id,
+        booking_info: dict,
+        service_items: list[dict]
+    ):
+        booking_date = convert_date_str(booking_info["booking_date"])
+
+        if booking_info["customer"]["email"]:
+            email = booking_info["customer"]["email"]
+        else:
+            email = "Không có"
+            
+        price = service_items[0]["services"]["price"]
+        discount_value = service_items[0]["services"]["service_discounts"][0]["discount_value"]
+        price_after_discount = int(price * (1 - discount_value / 100))
+
+        main_row = [
+            booking_info["id"],
+            booking_info["customer"]["name"],
+            booking_info["customer"]["phone"],
+            email,
+            booking_info["staff"]["name"],
+            booking_info["room"]["name"],
+            
+            str(service_items[0]["services"]["type"]),
+            str(service_items[0]["services"]["name"]),
+            str(service_items[0]["services"]["duration_minutes"]),
+            str(price),
+            str(discount_value),
+            str(price_after_discount),
+            
+            booking_info["start_time"],
+            booking_info["end_time"],
+            booking_info["total_time"],
             booking_date,
-            start_time,
-            end_time,
-            total_time,
-            status,
-            total_price,
-            create_date,
-            note
+            booking_info["status"],
+            booking_info["note"],
+            booking_info["total_price"]
         ]
+         
+        rows_to_append = []
+        rows_to_append.append(main_row)
+        
+        for item in service_items[1:]:
+            price = item["services"]["price"]
+            discount_value = item["services"]["service_discounts"][0]["discount_value"]
+            price_after_discount = int(price * (1 - discount_value / 100))
+            
+            # indent hoặc dấu gạch để phân biệt dòng con
+            row_child = [
+                "",  # id trống
+                "",  # customer_name trống
+                "",  # phone
+                "",  # email
+                "",  # staff
+                "",  # room
+                str(item["services"]["type"]),
+                str(item["services"]["name"]),
+                str(item["services"]["duration_minutes"]),
+                str(price),
+                str(discount_value),
+                str(price_after_discount),
+                "",  # start_time
+                "",  # end_time
+                "",  # total_time
+                "",  # booking_date
+                "",  # status
+                "",  # note
+                ""   # total_price
+            ]
+            rows_to_append.append(row_child)
+        
         try:
-            self.worksheet.append_row(row, value_input_option='USER_ENTERED')
+            # Gspread có method append_rows để append nhiều hàng cùng lúc. :contentReference[oaicite:0]{index=0}
+            self.worksheet.append_rows(rows_to_append, value_input_option='USER_ENTERED')
         except Exception as e:
-            # thử.retry hoặc log lỗi vào file local
-            print(f"Error when appending to sheet: {e}")
-            # optional: sleep rồi thử lại
-            time.sleep(5)
+            logger.error(f"Error when appending multiple rows: {e}")
+            time.sleep(3)
             try:
-                self.worksheet.append_row(row, value_input_option='USER_ENTERED')
+                # fallback: append từng hàng
+                for r in rows_to_append:
+                    self.worksheet.append_row(r, value_input_option='USER_ENTERED')
             except Exception as e2:
-                print(f"Second attempt failed: {e2}")
+                logger.error(f"Second fallback failed: {e2}")
