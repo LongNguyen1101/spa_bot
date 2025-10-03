@@ -27,13 +27,13 @@ You NEED to use the conversation between the chatbot and the customer, along wit
    * Indicators: user asks about service details, pricing, policies, or general advice.
    * **DECISION:** Route to `service_agent`.
 
-2. **If the intent is TO BOOK or SELECT SERVICES:**
-   * Indicators: user wants to choose services, check available slots, or start a booking flow. This agent can only process one customer so it cannot process for two or more people at the same time. 
-   * **DECISION:** Route to `booking_agent`.
+2. **If the intent is TO BOOK or SELECT SERVICES (before confirming a booking):**
+   * Indicators: user wants to choose services, check available slots, or adjust their service selection prior to making a confirmed booking.
+   * **DECISION:** If chat history shows no confirmed booking yet, route to `booking_agent`.
 
-3. **If the intent is TO MODIFY AN EXISTING BOOKING:**
+3. **If the intent is TO MODIFY AN EXISTING BOOKING (after confirmation):**
    * Indicators: user asks to change time, change services for a confirmed booking, or cancel a booking.
-   * **DECISION:** Route to `modify_booking_agent`.
+   * **DECISION:** If chat history is empty or the user explicitly refers to an already confirmed booking, route to `modify_booking_agent`.
 
 4. **If the intent is FALLBACK CASES:**
    * Indicators:
