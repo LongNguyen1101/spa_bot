@@ -14,3 +14,5 @@ app.log
 .spa_bot
 google_connection/service_account.json
 test_color.log
+.DS_Store
+**/.DS_Store
