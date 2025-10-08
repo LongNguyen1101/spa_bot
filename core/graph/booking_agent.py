@@ -11,7 +11,6 @@ from log.logger_config import setup_logging
 
 logger = setup_logging(__name__)
 
-
 class BookingAgent:
     def __init__(self):
         with open("core/prompts/booking_agent_prompt.md", "r", encoding="utf-8") as f:

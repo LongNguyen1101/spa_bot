@@ -79,6 +79,7 @@ class AgentState(Origin_AgentState):
     phone: Annotated[Optional[str], _remain_value]
     email: Annotated[Optional[str], _remain_value]
     new_customer: Annotated[Optional[bool], _remain_value]
+    session_id: Annotated[int | None, _remain_value]
     
     seen_services: Annotated[Optional[dict[int, Services]], _remain_dict]
     services: Annotated[Optional[dict[int, Services]], _remain_dict]
@@ -116,6 +117,7 @@ def init_state() -> AgentState:
         phone=None,
         email=None,
         new_customer=None,
+        session_id=None,
         
         seen_services=None,
         services=None,

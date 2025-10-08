@@ -1,3 +1,4 @@
+import stat
 import traceback
 from langgraph.types import Command
 from langgraph.prebuilt import InjectedState
@@ -360,7 +361,8 @@ def create_appointment_tool(
             "total_discount": 0,
             "price_after_discount": state["total_price"],
             "companion_name": companion_name,
-            "companion_phone": companion_phone
+            "companion_phone": companion_phone,
+            "session_id": state["session_id"]
         }
         
         appointment_res = appointment_repo.create_appointment(

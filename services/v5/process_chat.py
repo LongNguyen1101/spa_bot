@@ -2,25 +2,26 @@ import os
 import uuid
 import aiohttp
 import traceback
-from typing import Any, TypedDict
+from zoneinfo import ZoneInfo
 from langgraph.graph import StateGraph
+from schemas.response import ChatResponse
+from datetime import timedelta, datetime, timezone
 
-from core.graph.state import init_state
-from database.connection import supabase_client
-from repository.async_repo import AsyncCustomerRepo
+from core.graph.state import AgentState, init_state
+from schemas.response import ResponseModel
+from repository.async_repo import AsyncCustomerRepo, AsyncEventRepo, AsyncSessionRepo
 
 from log.logger_config import setup_logging
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = setup_logging(__name__)
-async_customer_repo = AsyncCustomerRepo(supabase_client=supabase_client)
+async_customer_repo = AsyncCustomerRepo()
+async_session_repo = AsyncSessionRepo()
+async_event_repo = AsyncEventRepo()
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-class ResponseModel(TypedDict):
-    content: str | None
-    error: str | None   
+N_DAYS = int(os.getenv("N_DAYS"))
 
 async def _get_or_create_uuid(chat_id: str) -> str:
     """
@@ -44,8 +45,8 @@ async def _get_or_create_uuid(chat_id: str) -> str:
 async def handle_normal_chat(
     user_input: str,
     chat_id: str,
-    thread_id: str,
     customer: dict,
+    config: dict,
     graph: StateGraph
 ) -> ResponseModel:
     """
@@ -61,11 +62,9 @@ async def handle_normal_chat(
         tuple[Any, str] | tuple[None, None]: Cặp (events, thread_id) hoặc (None, None) nếu lỗi.
     """
     try:
-        config = {"configurable": {"thread_id": thread_id}}
-
-        state = (graph.get_state(config).values 
-                 if graph.get_state(config).values 
-                 else init_state())
+        state: AgentState = customer["sessions"][0]["state_base64"]
+        if not state:
+            state = init_state()
 
         state["user_input"] = user_input
         state["chat_id"] = chat_id
@@ -74,6 +73,7 @@ async def handle_normal_chat(
         state["name"] = customer["name"]
         state["phone"] = customer["phone"]
         state["email"] = customer["email"]
+        state["session_id"] = customer["sessions"][0]["id"]
 
         result = graph.invoke(state, config=config)
         data = result["messages"][-1].content
@@ -104,7 +104,7 @@ async def handle_new_chat(
             thread_id = str(uuid.uuid4())
 
             # Create new session -> end old session -> NO add new event
-            new_session = await async_customer_repo.create_session(
+            new_session = await async_session_repo.create_session(
                 customer_id=customer["id"],
                 thread_id=thread_id
             )
@@ -116,14 +116,14 @@ async def handle_new_chat(
                 )
             logger.info(f"Create session successfully id: {new_session["id"]}")
 
-            end_session = await async_customer_repo.update_end_session(session_id=session["id"])
+            end_session = await async_session_repo.update_end_session(session_id=session["id"])
             if not end_session:
                 logger.error(f"Error in DB -> Cannot update session id: {session["id"]}")
                 return ResponseModel(
                     content=None,
                     error="Lỗi không thể cập nhật thread_id"
                 )
-            logger.info(f"Create session successfully id: {new_session["id"]}")
+            logger.info(f"Close session successfully id: {end_session["id"]}")
             logger.info(f"Cập nhật thread_id của khách: {customer["id"]} là {thread_id}")
         else:
             logger.info("New customer -> no need to update thread_id")
@@ -152,29 +152,20 @@ async def handle_new_chat(
         )
         
 async def handle_delete_me(
-    chat_id: str
+    customer_id: int
 ) -> ResponseModel:
-    """
-    Dev only (delete customer with chat id): Xóa khách hàng khỏi DB.
-
-    Args:
-        chat_id (str): Định danh cuộc hội thoại.
-
-    Yields:
-        str: Chuỗi SSE dạng `data: {...}` và token `[DONE]` khi hoàn tất.
-    """
     try:
-        deleted_customer = await async_customer_repo.delete_customer(chat_id=chat_id)
+        deleted_customer = await async_customer_repo.delete_customer(customer_id=customer_id)
 
         if not deleted_customer:
-            logger.error(f"Lỗi ở cấp DB -> Không xóa khách với chat_id: {chat_id}")
+            logger.error(f"Lỗi ở cấp DB -> Không xóa khách với id: {customer_id}")
             return ResponseModel(
                 content=None,
                 error="Lỗi không thể xóa khách hàng"
             )
             
         else:
-            logger.info(f"Xóa thành công khách với chat_id: {chat_id}")
+            logger.info(f"Xóa thành công khách với id: {customer_id}")
 
             response = (
                 "Dev only: Đã xóa thành công khách hàng khỏi hệ thống."
@@ -226,3 +217,237 @@ async def send_to_webhook(data: dict, chat_id: str):
         logger.error(f"Exception: {e}")
         logger.error(f"Chi tiết lỗi: \n{error_details}")
         raise
+    
+def _is_expired_over_n_days_vn(last_active_at: str, n_days: int = N_DAYS) -> bool:
+    """
+    Returns:
+        - True: Pass n days
+        - False: Not pass n days
+    """
+    dt = datetime.fromisoformat(last_active_at)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    tz_vn = ZoneInfo("Asia/Ho_Chi_Minh")
+    now_vn = datetime.now(tz_vn)
+
+    dt_vn = dt.astimezone(tz_vn)
+    delta = now_vn - dt_vn
+    
+    return delta > timedelta(days=n_days)
+
+async def _create_session_and_event(customer: dict, thread_id: str, event_type: str) -> bool:
+    new_session = await async_session_repo.create_session(
+        customer_id=customer["id"],
+        thread_id=thread_id
+    )
+    if not new_session:
+        logger.error("Error in DB -> Cannot create session")
+        return False
+    logger.info(f"Create session successfully id: {new_session["id"]}")
+    
+    new_event = await async_event_repo.create_event(
+        customer_id=customer["id"],
+        session_id=new_session["id"],
+        event_type=event_type
+    )
+    if not new_event:
+        logger.error("Error in DB -> Cannot create event")
+        return False
+    logger.info(f"Create event successfully id: {new_event["id"]}")
+    
+    return True
+
+async def _handle_old_customer(customer: dict) -> str | None:
+    session = customer["sessions"][0]
+    
+    if session:
+        last_active_at = session["last_active_at"]
+        
+        if _is_expired_over_n_days_vn(last_active_at=last_active_at):
+            logger.info("Customer last active exceed specify day -> create new session")
+            thread_id = str(uuid.uuid4())
+
+            # Create new session -> end old session -> add new event
+            session_and_event = await _create_session_and_event(
+                customer=customer, 
+                thread_id=thread_id,
+                event_type="returning_customer"
+            )
+            if not session_and_event:
+                return None
+
+            end_session = await async_session_repo.update_end_session(session_id=session["id"])
+            if not end_session:
+                logger.error(f"Error in DB -> Cannot close session id: {session["id"]}")
+                return None
+            logger.info(f"Close session successfully id: {end_session["id"]}")
+
+            return thread_id
+        
+        logger.info("Customer last active does not exceed specify day -> update last active session")
+        update_session = await async_session_repo.update_last_active_session(session_id=session["id"])
+        if not update_session:
+            logger.error(f"Error in DB -> Cannot update last active session id: {session["id"]}")
+        logger.info(f"Update last active session successfully id: {update_session["id"]}")
+
+        return session["thread_id"]
+    else:
+        # Trường hợp này sảy ra chỉ khi đã tạo khách thành công nhưng có lỗi trong quá
+        # trình tạo session -> session không tồn tại
+        thread_id = str(uuid.uuid4())
+        session_and_event = await _create_session_and_event(
+            customer=customer, 
+            thread_id=thread_id,
+            event_type="new_customer"
+        )
+        if not session_and_event:
+            return None
+
+        return thread_id
+
+async def _handle_new_customer(chat_id: str) -> tuple[None, None] | tuple[dict, str]:
+    # Create new thread_id -> create new customer -> create new_session -> add new event
+    thread_id = str(uuid.uuid4())
+    
+    customer = await async_customer_repo.create_customer(chat_id=chat_id)
+    if not customer:
+        logger.error("Error in DB -> Cannot create customer")
+        return None, None
+    logger.info(f"Create customer successfully id: {customer["id"]}")
+    
+    session_and_event = await _create_session_and_event(
+        customer=customer, 
+        thread_id=thread_id,
+        event_type="new_customer"
+    )
+    if not session_and_event:
+        return None, None
+    
+    return customer, thread_id
+
+async def _handle_customer(chat_id: str) -> tuple[None, None, None] | tuple[dict, str, bool]:
+    customer = await async_customer_repo.find_customer(chat_id=chat_id)
+    new_customer_flag = False
+        
+    if customer:
+        logger.info(f"Customer exist id: {customer["id"]}")
+        
+        thread_id = await _handle_old_customer(customer=customer)
+        logger.info(f"Handle old customer id: {customer["id"]} | thread_id: {thread_id}")
+    else:
+        # Customer is new -> create customer and add event
+        logger.info("Not found customer -> create customer")
+        
+        customer, thread_id = await _handle_new_customer(chat_id=chat_id)
+        logger.info(f"Handle new customer id: {customer["id"]} | thread_id: {thread_id}")
+        new_customer_flag = True
+    
+    if not customer or not thread_id:
+        return None, None, None
+    
+    return customer, thread_id, new_customer_flag
+
+async def _handle_final_process(
+    customer: dict,
+    graph: StateGraph,
+    config: dict,
+    thread_id: str
+):
+    # Create event chatbot response successfully
+    event = await async_event_repo.create_event(
+        customer_id=customer["id"],
+        session_id=customer["sessions"][0]["id"],
+        event_type="bot_response_success"
+    )
+    if not event:
+        logger.error("Error in DB -> Cannot add event record")
+    logger.info(f"Add event bot_response_success successfully id: {event["id"]}")
+    
+    # Update state to session table
+    session = await async_session_repo.update_state_session(
+        state=graph.get_state(config).values,
+        session_id=customer["sessions"][0]["id"],
+    )
+    if not session:
+        logger.error("Error in DB -> Cannot update state in session record")
+    logger.info(f"Update state to session record successfully id: {session["id"]}")
+    
+    # Delete the state in graph
+    graph.checkpointer.delete_thread(thread_id)    
+
+async def handle_request(
+    chat_id: str, 
+    user_input: str, 
+    graph: StateGraph
+) -> ChatResponse:
+    customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
+    if not customer or not thread_id:
+        return ChatResponse(
+            status="error", 
+            reply="Có lỗi xảy ra"
+        )
+    
+    config = {"configurable": {"thread_id": thread_id}}
+    
+    logger.info(f"Tin nhắn của khách: {user_input}")
+
+    if any(cmd in user_input for cmd in ["/start", "/restart"]):
+        messages = await handle_new_chat(
+            customer=customer,
+            new_customer_flag=new_customer_flag
+        )
+
+        if messages["error"]:
+            return ChatResponse(
+                status="error", 
+                reply="Có lỗi xảy ra khi khởi tạo chat mới"
+            )
+        return ChatResponse(
+            status="ok", 
+            reply=messages["content"]
+        )
+    
+    if user_input == "/delete_me":
+        messages = await handle_delete_me(customer_id=customer["id"])
+        
+        if messages["error"]:
+            return ChatResponse(
+                status="error", 
+                reply="Có lỗi xảy ra khi xóa dữ liệu"
+            )
+        return ChatResponse(
+            status="ok", 
+            reply=messages["content"]
+        )
+
+    messages = await handle_normal_chat(
+        user_input=user_input,
+        chat_id=chat_id,
+        customer=customer,
+        config=config,
+        graph=graph
+    )
+    
+    if messages["error"]:
+        return ChatResponse(
+            status="error", 
+            reply="Có lỗi xảy ra khi xử lý chat"
+        )
+    
+    try:
+        await _handle_final_process(
+            customer=customer,
+            graph=graph,
+            config=config,
+            thread_id=thread_id
+        )
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+    
+    return ChatResponse(
+        status="ok", 
+        reply=messages["content"]
+    )
