@@ -258,10 +258,9 @@ async def _create_session_and_event(customer: dict, thread_id: str, event_type: 
     
     return True
 
-async def _handle_old_customer(customer: dict) -> str | None:
-    session = customer["sessions"][0]
-    
-    if session:
+async def _handle_old_customer(customer: dict):
+    if customer["sessions"]:
+        session = customer["sessions"][0]
         last_active_at = session["last_active_at"]
         
         if _is_expired_over_n_days_vn(last_active_at=last_active_at):
@@ -275,23 +274,21 @@ async def _handle_old_customer(customer: dict) -> str | None:
                 event_type="returning_customer"
             )
             if not session_and_event:
-                return None
+                return None, None
 
             end_session = await async_session_repo.update_end_session(session_id=session["id"])
             if not end_session:
                 logger.error(f"Error in DB -> Cannot close session id: {session["id"]}")
-                return None
+                return None, None
             logger.info(f"Close session successfully id: {end_session["id"]}")
+        else:
+            logger.info("Customer last active does not exceed specify day -> update last active session")
+            update_session = await async_session_repo.update_last_active_session(session_id=session["id"])
+            if not update_session:
+                logger.error(f"Error in DB -> Cannot update last active session id: {session["id"]}")
+            logger.info(f"Update last active session successfully id: {update_session["id"]}")
 
-            return thread_id
-        
-        logger.info("Customer last active does not exceed specify day -> update last active session")
-        update_session = await async_session_repo.update_last_active_session(session_id=session["id"])
-        if not update_session:
-            logger.error(f"Error in DB -> Cannot update last active session id: {session["id"]}")
-        logger.info(f"Update last active session successfully id: {update_session["id"]}")
-
-        return session["thread_id"]
+            thread_id = session["thread_id"]
     else:
         # Trường hợp này sảy ra chỉ khi đã tạo khách thành công nhưng có lỗi trong quá
         # trình tạo session -> session không tồn tại
@@ -302,9 +299,14 @@ async def _handle_old_customer(customer: dict) -> str | None:
             event_type="new_customer"
         )
         if not session_and_event:
-            return None
+            return None, None
 
-        return thread_id
+    customer = await async_customer_repo.find_customer(chat_id=customer["chat_id"])
+    if not customer:
+        logger.error("Error in DB -> Cannot find customer after create")
+        return None, None
+    
+    return customer, thread_id
 
 async def _handle_new_customer(chat_id: str) -> tuple[None, None] | tuple[dict, str]:
     # Create new thread_id -> create new customer -> create new_session -> add new event
@@ -324,6 +326,11 @@ async def _handle_new_customer(chat_id: str) -> tuple[None, None] | tuple[dict, 
     if not session_and_event:
         return None, None
     
+    customer = await async_customer_repo.find_customer(chat_id=chat_id)
+    if not customer:
+        logger.error("Error in DB -> Cannot find customer after create")
+        return None, None
+    
     return customer, thread_id
 
 async def _handle_customer(chat_id: str) -> tuple[None, None, None] | tuple[dict, str, bool]:
@@ -333,7 +340,7 @@ async def _handle_customer(chat_id: str) -> tuple[None, None, None] | tuple[dict
     if customer:
         logger.info(f"Customer exist id: {customer["id"]}")
         
-        thread_id = await _handle_old_customer(customer=customer)
+        customer, thread_id = await _handle_old_customer(customer=customer)
         logger.info(f"Handle old customer id: {customer["id"]} | thread_id: {thread_id}")
     else:
         # Customer is new -> create customer and add event

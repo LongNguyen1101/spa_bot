@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException
 
 from schemas.resquest import ChatRequest
 from schemas.response import ChatResponse
-from repository.async_repo import AsyncCustomerRepo
 from services.v5.process_chat import handle_webhook_request, handle_invoke_request
 from core.graph.build_graph import create_main_graph
 
@@ -19,7 +18,6 @@ N_DAYS = int(os.getenv("N_DAYS"))
 
 router = APIRouter()
 graph = create_main_graph()
-async_customer_repo = AsyncCustomerRepo()
 
 @router.post("/chat/invoke", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse | HTTPException:
