@@ -65,6 +65,10 @@ class Supervisor:
         """
         update = {}
         try:
+            logger.error("This is test error log1")
+            logger.error("This is test error log2")
+            logger.error("This is test error log2")
+            
             if not state["customer_id"]:
                 customer = self.customer_repo.get_or_create_customer(
                     chat_id=state["chat_id"]
