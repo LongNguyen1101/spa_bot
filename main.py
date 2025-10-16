@@ -5,11 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from core.graph.build_graph import create_main_graph
 
-from api.v1.routes import router as api_router_v1
-from api.v2.routes import router as api_router_v2
-from api.v3.routes import router as api_router_v3
-from api.v4.routes import router as api_router_v4
-from api.v5.routes import router as api_router_v5
+from api.chatbot.v4.routes import router as api_router_v4
+from api.chatbot.v5.routes import router as api_chatbot_router_v5
+
+from api.admin.v1.routes import router as api_admin_router_v1
 
 # @asynccontextmanager
 # async def lifespan(app: FastAPI):
@@ -41,11 +40,11 @@ app.add_middleware(
 )
 
 # Include the API router with a prefix
-app.include_router(api_router_v1, prefix="/api/v1")
-app.include_router(api_router_v2, prefix="/api/v2")
-app.include_router(api_router_v3, prefix="/api/v3") # -> telegram
-app.include_router(api_router_v4, prefix="/api/v4") # -> web
-app.include_router(api_router_v5, prefix="/api/v5") # -> add tracing
+
+app.include_router(api_router_v4, prefix="/api/chatbot/v4") # -> web
+app.include_router(api_chatbot_router_v5, prefix="/api/chatbot/v5") # -> add tracing
+
+app.include_router(api_admin_router_v1, prefix="/api/admin/v1")
 
 # Define a root endpoint
 @app.get("/")

@@ -124,6 +124,15 @@ class AsyncCustomerRepo:
 
         return response.data[0] if response.data else None
     
+    async def update_customer(self, chat_id: str, payload: dict) -> dict | None:
+        response = (
+            self.supabase_client.table("customers")
+            .update(payload)
+            .eq("chat_id", chat_id)
+            .execute()
+        )
+
+        return response.data[0] if response.data else None        
 class AsyncSessionRepo:
     def __init__(self):
         self.supabase_client = supabase_client
@@ -224,4 +233,3 @@ class AsyncEventRepo:
         )
         
         return response.data[0] if response.data else None
-        

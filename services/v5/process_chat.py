@@ -1,3 +1,5 @@
+import asyncio
+from math import log
 import os
 import uuid
 import aiohttp
@@ -5,6 +7,7 @@ import traceback
 from zoneinfo import ZoneInfo
 from langgraph.graph import StateGraph
 from schemas.response import ChatResponse
+from fastapi.responses import PlainTextResponse
 from datetime import timedelta, datetime, timezone
 
 from core.graph.state import AgentState, init_state
@@ -49,18 +52,6 @@ async def handle_normal_chat(
     config: dict,
     graph: StateGraph
 ) -> ResponseModel:
-    """
-    Xử lý luồng chat thông thường: nạp state, cập nhật thông tin khách, gọi graph và trả về `events`.
-
-    Args:
-        user_input (str): Nội dung người dùng nhập.
-        chat_id (str): Mã cuộc hội thoại.
-        customer (dict): Thông tin khách hàng lấy từ DB.
-        graph (StateGraph): Đồ thị tác vụ chính để suy luận.
-
-    Returns:
-        tuple[Any, str] | tuple[None, None]: Cặp (events, thread_id) hoặc (None, None) nếu lỗi.
-    """
     try:
         state: AgentState = customer["sessions"][0]["state_base64"]
         if not state:
@@ -186,23 +177,23 @@ async def handle_delete_me(
             error=str(e)
         )
         
-async def send_to_webhook(data: dict, chat_id: str):
+async def send_to_webhook(text: str, chat_id: str):
     """
     Gửi response data đến webhook URL
     Args:
-        data (dict): Dữ liệu response cần gửi
+        text (str): Nội dung tin nhắn
         chat_id (str): ID của chat
     """
     try:
         payload = {
             "chat_id": chat_id,
-            "response": data,
-            "timestamp": traceback.format_exc()  # Có thể thay bằng datetime.now().isoformat()
+            "response": text,
+            "timestamp": traceback.format_exc()
         }
         
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                WEBHOOK_URL, 
+                WEBHOOK_URL,
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=30)
@@ -381,7 +372,84 @@ async def _handle_final_process(
     logger.info(f"Update state to session record successfully id: {session["id"]}")
     
     # Delete the state in graph
-    graph.checkpointer.delete_thread(thread_id)    
+    graph.checkpointer.delete_thread(thread_id)
+    
+async def _process_webhook_message(
+    chat_id: str, 
+    user_input: str, 
+    graph: StateGraph
+):
+    messages = None
+    try:
+        customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
+        if not customer or not thread_id:
+            logger.error("Not found customer or thread_id")
+            raise
+        
+        if customer["control_mode"] == "ADMIN":
+            logger.info(f"Customer {chat_id} is under ADMIN control. Skipping bot response.")
+            return
+        
+        config = {"configurable": {"thread_id": thread_id}}
+
+        logger.info(f"Tin nhắn của khách: {user_input}")
+
+        if any(cmd in user_input for cmd in ["/start", "/restart"]):
+            messages = await handle_new_chat(
+                customer=customer,
+                new_customer_flag=new_customer_flag
+            )
+
+            if not messages["error"]:
+                logger.info("Create new chat session successfully")
+
+        elif user_input == "/delete_me":
+            messages = await handle_delete_me(customer_id=customer["id"])
+
+            if not messages["error"]:
+                logger.info("Delete new customer in DB successfully")
+        else:
+            messages = await handle_normal_chat(
+                user_input=user_input,
+                chat_id=chat_id,
+                customer=customer,
+                config=config,
+                graph=graph
+            )
+
+            if not messages["error"]:
+                logger.info("Chat process successfully -> add event")
+                await _handle_final_process(
+                    customer=customer,
+                    graph=graph,
+                    config=config,
+                    thread_id=thread_id
+                )
+        
+        if messages:
+            if messages["error"]:
+                logger.error(f"Error in processing chat: {messages['error']}")
+                await send_to_webhook(
+                    text="Lỗi server, xin vui lòng thử lại sau", 
+                    chat_id=chat_id
+                )
+                raise
+            else:
+                await send_to_webhook(data=messages["content"], chat_id=chat_id)
+                logger.info(f"Send to webhook: {messages}")
+        else:
+            logger.error("Messages is None")
+            raise
+            
+        
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+
+# ---------------------------------------------------------------------------------
+# Main function
+# ---------------------------------------------------------------------------------
 
 async def handle_invoke_request(
     chat_id: str, 
@@ -464,82 +532,12 @@ async def handle_webhook_request(
     user_input: str, 
     graph: StateGraph
 ) -> ChatResponse:
-    customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
-    if not customer or not thread_id:
-        return ChatResponse(
-            status="error", 
-            reply="Có lỗi xảy ra"
+    asyncio.create_task(
+        _process_webhook_message(
+            chat_id=chat_id,
+            user_input=user_input,
+            graph=graph
         )
-    
-    config = {"configurable": {"thread_id": thread_id}}
-    
-    logger.info(f"Tin nhắn của khách: {user_input}")
-
-    if any(cmd in user_input for cmd in ["/start", "/restart"]):
-        messages = await handle_new_chat(
-            customer=customer,
-            new_customer_flag=new_customer_flag
-        )
-        
-        await send_to_webhook(data=messages["content"], chat_id=chat_id)
-        logger.info(f"Send to webhook: {messages["content"]}")
-
-        if messages["error"]:
-            return ChatResponse(
-                status="error", 
-                reply="Có lỗi xảy ra khi khởi tạo chat mới"
-            )
-        return ChatResponse(
-            status="ok", 
-            reply="Đã xử lý thành công"
-        )
-    
-    if user_input == "/delete_me":
-        messages = await handle_delete_me(customer_id=customer["id"])
-        
-        await send_to_webhook(data=messages["content"], chat_id=chat_id)
-        logger.info(f"Send to webhook: {messages["content"]}")
-        
-        if messages["error"]:
-            return ChatResponse(
-                status="error", 
-                reply="Có lỗi xảy ra khi xóa dữ liệu"
-            )
-        return ChatResponse(
-            status="ok", 
-            reply="Đã xử lý thành công"
-        )
-
-    messages = await handle_normal_chat(
-        user_input=user_input,
-        chat_id=chat_id,
-        customer=customer,
-        config=config,
-        graph=graph
     )
     
-    await send_to_webhook(data=messages, chat_id=chat_id)
-    logger.info(f"Send to webhook: {messages}")
-    
-    if messages["error"]:
-        return ChatResponse(
-            status="error", 
-            reply="Có lỗi xảy ra khi xử lý chat"
-        )
-    
-    try:
-        await _handle_final_process(
-            customer=customer,
-            graph=graph,
-            config=config,
-            thread_id=thread_id
-        )
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Exception: {e}")
-        logger.error(f"Chi tiết lỗi: \n{error_details}")
-    
-    return ChatResponse(
-        status="ok", 
-        reply="Đã xử lý thành công"
-    )
+    return PlainTextResponse(content="OK", status_code=200)
