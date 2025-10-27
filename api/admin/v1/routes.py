@@ -8,7 +8,6 @@ from log.logger_config import setup_logging
 from database.connection import supabase_client
 from repository.async_repo import AsyncCustomerRepo
 from schemas.resquest import ControlRequest, SendMessageRequest
-from services.v4.process_chat import handle_send_message_platforms
 
 load_dotenv()
 logger = setup_logging(__name__)
@@ -96,32 +95,32 @@ async def release_conversation(request: ControlRequest):
         
         raise HTTPException(status_code=500, detail=str(e))
     
-@router.post("/conversations/send_message", status_code=200)
-async def send_message(request: SendMessageRequest):
-    """
-    "Smart Dispatcher": Tự động nhận diện nền tảng từ chat_id và gửi tin nhắn.
-    """
-    chat_id = request.chat_id
-    text = request.text
+# @router.post("/conversations/send_message", status_code=200)
+# async def send_message(request: SendMessageRequest):
+#     """
+#     "Smart Dispatcher": Tự động nhận diện nền tảng từ chat_id và gửi tin nhắn.
+#     """
+#     chat_id = request.chat_id
+#     text = request.text
     
-    logger.info(f"Smart Dispatcher: Gửi tin nhắn tới {chat_id}")
+#     logger.info(f"Smart Dispatcher: Gửi tin nhắn tới {chat_id}")
     
-    try:
-        # Quy tắc 1: Nếu chat_id bắt đầu bằng 'web-', đó là WebSocket
-        platform = await handle_send_message_platforms(
-            chat_id=chat_id, 
-            text=text
-        )
+#     try:
+#         # Quy tắc 1: Nếu chat_id bắt đầu bằng 'web-', đó là WebSocket
+#         platform = await handle_send_message_platforms(
+#             chat_id=chat_id, 
+#             text=text
+#         )
         
-        logger.success(f"Đã gửi tin nhắn thành công qua nền tảng: {platform}")
-        return {"status": "success", "message": f"Tin nhắn đã được gửi qua {platform}."}
+#         logger.success(f"Đã gửi tin nhắn thành công qua nền tảng: {platform}")
+#         return {"status": "success", "message": f"Tin nhắn đã được gửi qua {platform}."}
 
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Exception: {e}")
-        logger.error(f"Chi tiết lỗi: \n{error_details}")
+#     except Exception as e:
+#         error_details = traceback.format_exc()
+#         logger.error(f"Exception: {e}")
+#         logger.error(f"Chi tiết lỗi: \n{error_details}")
         
-        # Ném lại lỗi để FastAPI có thể xử lý
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=500, detail=str(e))
+#         # Ném lại lỗi để FastAPI có thể xử lý
+#         if isinstance(e, HTTPException):
+#             raise e
+#         raise HTTPException(status_code=500, detail=str(e))

@@ -2,7 +2,9 @@ import json
 import asyncio
 from typing import Any
 from typing import Optional
+from zoneinfo import ZoneInfo
 from langgraph.graph import StateGraph
+from datetime import datetime, timezone
 from core.graph.state import AgentState
 from database.connection import supabase_client
 
@@ -101,3 +103,19 @@ async def delete_customer(chat_id: str) -> bool:
         .execute()
     )
     return bool(response.data)
+
+def now_vietnam_time() -> datetime:
+    tz_vn = ZoneInfo("Asia/Ho_Chi_Minh")
+    now_utc = datetime.now(timezone.utc)
+    now_vn = now_utc.astimezone(tz_vn)
+    return now_vn
+
+def cal_duration_ms(
+    timestamp_start: datetime,
+    timestamp_end: datetime
+) -> float:
+    delta = timestamp_end - timestamp_start
+    seconds = delta.total_seconds()
+    duration_ms = seconds * 1000
+    
+    return duration_ms

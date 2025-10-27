@@ -1,8 +1,7 @@
-import asyncio
-from math import log
 import os
 import uuid
-import aiohttp
+import httpx
+import asyncio
 import traceback
 from zoneinfo import ZoneInfo
 from langgraph.graph import StateGraph
@@ -10,40 +9,70 @@ from schemas.response import ChatResponse
 from fastapi.responses import PlainTextResponse
 from datetime import timedelta, datetime, timezone
 
-from core.graph.state import AgentState, init_state
 from schemas.response import ResponseModel
-from repository.async_repo import AsyncCustomerRepo, AsyncEventRepo, AsyncSessionRepo
+from core.graph.state import AgentState, init_state
+from repository.async_repo import AsyncCustomerRepo, AsyncEventRepo, AsyncMessageSpanRepo, AsyncSessionRepo
 
 from log.logger_config import setup_logging
 from dotenv import load_dotenv
+
+from services.utils import cal_duration_ms, now_vietnam_time
 
 load_dotenv()
 logger = setup_logging(__name__)
 async_customer_repo = AsyncCustomerRepo()
 async_session_repo = AsyncSessionRepo()
 async_event_repo = AsyncEventRepo()
+async_message_repo = AsyncMessageSpanRepo()
 
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+CALLBACK_URL = os.getenv("CALLBACK_URL")
 N_DAYS = int(os.getenv("N_DAYS"))
 
-async def _get_or_create_uuid(chat_id: str) -> str:
-    """
-    Lấy `uuid` hiện tại của khách theo `chat_id`, nếu chưa tồn tại thì tạo mới và lưu.
-
-    Args:
-        chat_id (str): Định danh cuộc hội thoại/khách hàng.
-
-    Returns:
-        str: UUID hiện có hoặc mới tạo.
-    """
-    current_uuid = await async_customer_repo.get_uuid(chat_id=chat_id)
+async def _handle_message_spans(
+    session_id: int,
+    customer_id: int,
+    message_spans: list[dict]
+) -> bool:
+    main_span_id = str(uuid.uuid4())
     
-    if not current_uuid:
-        new_uuid = str(uuid.uuid4())
-        await async_customer_repo.update_uuid(chat_id=chat_id, new_uuid=new_uuid)
-        return new_uuid
-
-    return current_uuid
+    # Get the last outbound span_id from DB
+    logger.info("Get the latest event and bot span from DB")
+    latest_span = await async_message_repo.get_latest_event_and_bot_span(
+        customer_id=customer_id
+    )
+    
+    response_duration_ms = None
+    if latest_span["span_end_ts"] is not None:
+        response_duration_ms = cal_duration_ms(
+            timestamp_start=datetime.fromisoformat(latest_span["span_end_ts"]),
+            timestamp_end=datetime.fromisoformat(message_spans[0]["timestamp_start"])
+        )
+    
+    logger.info(f"Customer id: {customer_id} | Latest span: {latest_span} | Response duration ms: {response_duration_ms}")
+    
+    # Config the main span
+    message_spans[0].update({
+        "id": main_span_id,
+        "session_id": session_id,
+        "parent_span_id": None,
+        "customer_id": customer_id,
+        "response_to_span_id": latest_span["span_id"],
+        "response_duration_ms": response_duration_ms
+    })
+    
+    for span in message_spans[1:]:
+        span.update({
+            "id": str(uuid.uuid4()),
+            "session_id": session_id,
+            "parent_span_id": main_span_id,
+            "customer_id": customer_id
+        })
+        
+    created_spans = await async_message_repo.create_message_span_bulk(
+        message_spans=message_spans
+    )
+    
+    return True if created_spans else False
 
 async def handle_normal_chat(
     user_input: str,
@@ -177,7 +206,15 @@ async def handle_delete_me(
             error=str(e)
         )
         
-async def send_to_webhook(text: str, chat_id: str):
+async def send_to_callback(
+    text: str, 
+    chat_id: str,
+    status: str = "ok",
+    timestamp_start: datetime = None,
+    message_spans: list[dict] = [],
+    session_id: int = None,
+    customer_id: int = None,
+):
     """
     Gửi response data đến webhook URL
     Args:
@@ -185,29 +222,62 @@ async def send_to_webhook(text: str, chat_id: str):
         chat_id (str): ID của chat
     """
     try:
+        timestamp_end = now_vietnam_time()
+        duration_ms = cal_duration_ms(
+            timestamp_start=timestamp_start,
+            timestamp_end=timestamp_end
+        )
+        message_spans += [{
+            "timestamp_start": timestamp_start.isoformat(),
+            "timestamp_end": timestamp_end.isoformat(),
+            "duration_ms": duration_ms,
+            "step_name": "chatbot_process",
+            "service_name": "chatbot_service",
+            "direction": "internal",
+            "status": status
+        }]
+        
         payload = {
             "chat_id": chat_id,
-            "response": text,
-            "timestamp": traceback.format_exc()
+            "response": text
         }
         
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                WEBHOOK_URL,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as response:
-                if response.status == 200:
-                    logger.info(f"Đã gửi thành công response đến webhook cho chat_id: {chat_id}")
+        timeout = httpx.Timeout(30.0)  # thiết lập timeout 30 giây
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                response = await client.post(
+                    CALLBACK_URL,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                
+                data = response.json()
+                if response.status_code == 200:
+                    logger.info(f"Scucessfully sent response to webhook for chat_id: {chat_id}")
                 else:
-                    logger.error(f"Lỗi khi gửi đến webhook. Status: {response.status}, chat_id: {chat_id}")
-                    
+                    logger.error(f"Error sending to webhook. Status: {response.status_code}, chat_id: {chat_id}, detail: {data["detail"]}")
+                
+            except httpx.RequestError as exc:
+                logger.error(f"An error occurred: {exc}")
+            except httpx.HTTPStatusError as exc:
+                logger.error(f"Non-success status: {exc.response.status_code}")
+        
+        message_spans += [data["message_span"]]
+        check_create_spans = await _handle_message_spans(
+            session_id=session_id,
+            customer_id=customer_id,
+            message_spans=message_spans
+        )
+        
+        if not check_create_spans:
+            logger.error("Error in DB -> Cannot create message spans")
+            raise Exception("Error in DB -> Cannot create message spans")
+        logger.info("Create message spans successfully")
+        
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Exception: {e}")
         logger.error(f"Chi tiết lỗi: \n{error_details}")
-        raise
     
 def _is_expired_over_n_days_vn(last_active_at: str, n_days: int = N_DAYS) -> bool:
     """
@@ -350,13 +420,14 @@ async def _handle_final_process(
     customer: dict,
     graph: StateGraph,
     config: dict,
-    thread_id: str
+    thread_id: str,
+    event_type: str = "bot_response_success"
 ):
     # Create event chatbot response successfully
     event = await async_event_repo.create_event(
         customer_id=customer["id"],
         session_id=customer["sessions"][0]["id"],
-        event_type="bot_response_success"
+        event_type=event_type
     )
     if not event:
         logger.error("Error in DB -> Cannot add event record")
@@ -377,21 +448,22 @@ async def _handle_final_process(
 async def _process_webhook_message(
     chat_id: str, 
     user_input: str, 
-    graph: StateGraph
+    graph: StateGraph,
+    timestamp_start: datetime = None,
+    message_spans: list[dict] = None,
 ):
     messages = None
     try:
         customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
         if not customer or not thread_id:
             logger.error("Not found customer or thread_id")
-            raise
+            raise Exception("Not found customer or thread_id")
         
         if customer["control_mode"] == "ADMIN":
             logger.info(f"Customer {chat_id} is under ADMIN control. Skipping bot response.")
             return
         
         config = {"configurable": {"thread_id": thread_id}}
-
         logger.info(f"Tin nhắn của khách: {user_input}")
 
         if any(cmd in user_input for cmd in ["/start", "/restart"]):
@@ -416,36 +488,201 @@ async def _process_webhook_message(
                 config=config,
                 graph=graph
             )
-
-            if not messages["error"]:
+            
+            if messages["error"]:
+                logger.error("Error in processing chat -> add event")
+                event_type = "bot_response_failure"
+            else:
                 logger.info("Chat process successfully -> add event")
-                await _handle_final_process(
-                    customer=customer,
-                    graph=graph,
-                    config=config,
-                    thread_id=thread_id
-                )
+                event_type = "bot_response_success"
+
+            await _handle_final_process(
+                customer=customer,
+                graph=graph,
+                config=config,
+                thread_id=thread_id,
+                event_type=event_type
+            )
         
         if messages:
             if messages["error"]:
                 logger.error(f"Error in processing chat: {messages['error']}")
-                await send_to_webhook(
-                    text="Lỗi server, xin vui lòng thử lại sau", 
-                    chat_id=chat_id
-                )
-                raise
+                raise Exception(messages["error"])
             else:
-                await send_to_webhook(data=messages["content"], chat_id=chat_id)
+                await send_to_callback(
+                    text=messages["content"], 
+                    chat_id=chat_id,
+                    status="ok",
+                    timestamp_start=timestamp_start,
+                    message_spans=message_spans,
+                    session_id=customer["sessions"][0]["id"],
+                    customer_id=customer["id"]
+                )
                 logger.info(f"Send to webhook: {messages}")
         else:
             logger.error("Messages is None")
-            raise
+            raise Exception("Messages is None")
             
         
     except Exception as e:
         error_details = traceback.format_exc()
         logger.error(f"Exception: {e}")
         logger.error(f"Chi tiết lỗi: \n{error_details}")
+        
+        await send_to_callback(
+            text="Lỗi server, xin vui lòng thử lại sau", 
+            chat_id=chat_id,
+            status="error",
+            timestamp_start=timestamp_start,
+            message_spans=message_spans,
+            session_id=customer["sessions"][0]["id"],
+            customer_id=customer["id"]
+        )
+        
+async def _process_invoke_message(
+    chat_id: str, 
+    user_input: str, 
+    graph: StateGraph,
+    timestamp_start: datetime = None
+):
+    messages = None
+    try:
+        customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
+        if not customer or not thread_id:
+            logger.error("Not found customer or thread_id")
+            raise Exception("Not found customer or thread_id")
+        
+        if customer["control_mode"] == "ADMIN":
+            logger.info(f"Customer {chat_id} is under ADMIN control. Skipping bot response.")
+            return
+
+        config = {"configurable": {"thread_id": thread_id}}
+        logger.info(f"Tin nhắn của khách: {user_input}")
+
+        if any(cmd in user_input for cmd in ["/start", "/restart"]):
+            messages = await handle_new_chat(
+                customer=customer,
+                new_customer_flag=new_customer_flag
+            )
+
+            if not messages["error"]:
+                logger.info("Create new chat session successfully")
+
+        elif user_input == "/delete_me":
+            messages = await handle_delete_me(customer_id=customer["id"])
+
+            if not messages["error"]:
+                logger.info("Delete new customer in DB successfully")
+        else:
+            messages = await handle_normal_chat(
+                user_input=user_input,
+                chat_id=chat_id,
+                customer=customer,
+                config=config,
+                graph=graph
+            )
+            
+            if messages["error"]:
+                logger.error("Error in processing chat -> add event")
+                event_type = "bot_response_failure"
+            else:
+                logger.info("Chat process successfully -> add event")
+                event_type = "bot_response_success"
+
+            await _handle_final_process(
+                customer=customer,
+                graph=graph,
+                config=config,
+                thread_id=thread_id,
+                event_type=event_type
+            )
+            
+        if messages:
+            if messages["error"]:
+                logger.error(f"Error in processing chat: {messages['error']}")
+                raise Exception(messages["error"])
+            else:
+                timestamp_end = now_vietnam_time()
+                duration_ms = cal_duration_ms(
+                    timestamp_start=timestamp_start,
+                    timestamp_end=timestamp_end
+                )
+                
+                check_create_spans = await _handle_message_spans(
+                    session_id=customer["sessions"][0]["id"],
+                    customer_id=customer["id"],
+                    message_spans=[
+                        {
+                            "timestamp_start": timestamp_start.isoformat(),
+                            "timestamp_end": timestamp_end.isoformat(),
+                            "duration_ms": 0,
+                            "step_name": "chatbot_process",
+                            "service_name": "chatbot_service",
+                            "direction": "inbound",
+                            "status": "ok"
+                        },
+                        {
+                            "timestamp_start": timestamp_start.isoformat(),
+                            "timestamp_end": timestamp_end.isoformat(),
+                            "duration_ms": duration_ms,
+                            "step_name": "chatbot_process",
+                            "service_name": "chatbot_service",
+                            "direction": "outbound",
+                            "status": "ok"
+                        }
+                    ]
+                )
+                
+                if not check_create_spans:
+                    logger.error("Error in DB -> Cannot create message spans")
+                logger.info("Create message spans successfully")
+                
+                return 200, messages["content"]
+        else:
+            logger.error("Messages is None")
+            raise Exception("Messages is None")
+        
+    except Exception as e:
+        error_details = traceback.format_exc()
+        logger.error(f"Exception: {e}")
+        logger.error(f"Chi tiết lỗi: \n{error_details}")
+        
+        timestamp_end = now_vietnam_time()
+        duration_ms = cal_duration_ms(
+            timestamp_start=timestamp_start,
+            timestamp_end=timestamp_end
+        )
+        
+        check_create_spans = await _handle_message_spans(
+            session_id=customer["sessions"][0]["id"],
+            customer_id=customer["id"],
+            message_spans=[
+                {
+                    "timestamp_start": timestamp_start.isoformat(),
+                    "timestamp_end": timestamp_end.isoformat(),
+                    "duration_ms": 0,
+                    "step_name": "chatbot_process",
+                    "service_name": "chatbot_service",
+                    "direction": "inbound",
+                    "status": "ok"
+                },
+                {
+                    "timestamp_start": timestamp_start.isoformat(),
+                    "timestamp_end": timestamp_end.isoformat(),
+                    "duration_ms": duration_ms,
+                    "step_name": "chatbot_process",
+                    "service_name": "chatbot_service",
+                    "direction": "outbound",
+                    "status": "error"
+                }
+            ]
+        )
+        
+        if not check_create_spans:
+            logger.error("Error in DB -> Cannot create message spans")
+        logger.info("Create message spans successfully")
+        
+        return 500, "Lỗi server, xin vui lòng thử lại sau"
 
 # ---------------------------------------------------------------------------------
 # Main function
@@ -454,89 +691,32 @@ async def _process_webhook_message(
 async def handle_invoke_request(
     chat_id: str, 
     user_input: str, 
-    graph: StateGraph
+    graph: StateGraph,
+    timestamp_start: datetime = None
 ) -> ChatResponse:
-    customer, thread_id, new_customer_flag = await _handle_customer(chat_id=chat_id)
-    if not customer or not thread_id:
-        return ChatResponse(
-            status="error", 
-            reply="Có lỗi xảy ra"
-        )
-    
-    config = {"configurable": {"thread_id": thread_id}}
-    
-    logger.info(f"Tin nhắn của khách: {user_input}")
-
-    if any(cmd in user_input for cmd in ["/start", "/restart"]):
-        messages = await handle_new_chat(
-            customer=customer,
-            new_customer_flag=new_customer_flag
-        )
-
-        if messages["error"]:
-            return ChatResponse(
-                status="error", 
-                reply="Có lỗi xảy ra khi khởi tạo chat mới"
-            )
-        return ChatResponse(
-            status="ok", 
-            reply=messages["content"]
-        )
-    
-    if user_input == "/delete_me":
-        messages = await handle_delete_me(customer_id=customer["id"])
-        
-        if messages["error"]:
-            return ChatResponse(
-                status="error", 
-                reply="Có lỗi xảy ra khi xóa dữ liệu"
-            )
-        return ChatResponse(
-            status="ok", 
-            reply=messages["content"]
-        )
-
-    messages = await handle_normal_chat(
-        user_input=user_input,
+    status_code, response = await _process_invoke_message(
         chat_id=chat_id,
-        customer=customer,
-        config=config,
-        graph=graph
+        user_input=user_input,
+        graph=graph,
+        timestamp_start=timestamp_start
     )
     
-    if messages["error"]:
-        return ChatResponse(
-            status="error", 
-            reply="Có lỗi xảy ra khi xử lý chat"
-        )
-    
-    try:
-        await _handle_final_process(
-            customer=customer,
-            graph=graph,
-            config=config,
-            thread_id=thread_id
-        )
-    except Exception as e:
-        error_details = traceback.format_exc()
-        logger.error(f"Exception: {e}")
-        logger.error(f"Chi tiết lỗi: \n{error_details}")
-    
-    return ChatResponse(
-        status="ok", 
-        reply=messages["content"]
-    )
+    return PlainTextResponse(content=response, status_code=status_code)
 
 async def handle_webhook_request(
     chat_id: str, 
     user_input: str, 
-    graph: StateGraph
-) -> ChatResponse:
+    graph: StateGraph,
+    timestamp_start: datetime = None,
+    message_spans: list[dict] = None,
+):
     asyncio.create_task(
         _process_webhook_message(
             chat_id=chat_id,
             user_input=user_input,
-            graph=graph
+            graph=graph,
+            timestamp_start=timestamp_start,
+            message_spans=message_spans
         )
     )
     

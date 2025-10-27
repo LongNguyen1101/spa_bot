@@ -7,7 +7,12 @@ from database.connection import supabase_client
 
 from database.connection import get_async_supabase_client
 
-VALID_EVENT_TYPES = {"new_customer", "returning_customer", "bot_response_success"}
+VALID_EVENT_TYPES = {
+    "new_customer", 
+    "returning_customer", 
+    "bot_response_success",
+    "bot_response_failure",
+}
 
 async def _create_async_supabase_client() -> AsyncClient:
     return await get_async_supabase_client()
@@ -233,3 +238,83 @@ class AsyncEventRepo:
         )
         
         return response.data[0] if response.data else None
+    
+class AsyncMessageSpanRepo:
+    def __init__(self):
+        self.supabase_client = supabase_client
+        
+    async def create_message_span(
+        self, 
+        session_id: int, 
+        sender: str, 
+        content: str
+    ) -> dict | None:
+        response = (
+            self.supabase_client.table("messages")
+            .insert(
+                {
+                    "session_id": session_id,
+                    "sender": sender,
+                    "content": content,
+                    "timestamp": _get_time_vn()
+                }
+            )
+            .execute()
+        )
+
+        return response.data[0] if response.data else None
+    
+    async def create_message_span_bulk(
+        self,
+        message_spans: list[dict]
+    ) -> list[dict] | None:
+        response = (
+            self.supabase_client.table("message_spans")
+            .insert(message_spans)
+            .execute()
+        )
+
+        return response.data if response.data else None
+    
+    async def get_latest_event_and_bot_span(self, customer_id: int) -> dict:
+        # 1. Lấy bản ghi event mới nhất cho customer_id
+        r1 = (
+            self.supabase_client
+            .table("events")
+            .select("customer_id, session_id")
+            .eq("customer_id", customer_id)
+            .order("timestamp", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not r1.data:
+            return None  # không có event cho customer này
+        event = r1.data[0]
+        session_id = event["session_id"]
+
+        # 2. Lấy bot span mới nhất cho session đó và direction = 'outbound'
+        r2 = (
+            self.supabase_client
+            .table("message_spans")
+            .select("id, timestamp_end")
+            .eq("session_id", session_id)
+            .eq("direction", "outbound")
+            .order("timestamp_end", desc=True)
+            .limit(1)
+            .execute()
+        )
+        span = r2.data[0] if r2.data else None
+
+        # 3. Chuẩn bị kết quả
+        result = {
+            "customer_id": customer_id,
+            "event_session_id": session_id,
+            "span_id": None,
+            "span_end_ts": None
+        }
+
+        if span:
+            result["span_id"] = span["id"]
+            result["span_end_ts"] = span["timestamp_end"]
+
+        return result
