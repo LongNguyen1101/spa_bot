@@ -28,8 +28,31 @@ def _get_services_and_discount_by_embedding(
         match_count=match_count
     )
     
-    service_id_list = [item.get("content")["id"] for item in rag_results]
+    if not rag_results:
+        logger.error("Error calling RPC match_services")
+        raise ExecError("Error calling RPC match_services")
+    
+    service_id_list = [item.get("service_id") for item in rag_results]
     data = service_repo.get_services_by_ids(service_id_list=service_id_list)
+    
+    return data
+
+def _get_qna_by_embedding(
+    query_embedding: list[float],
+    match_count: int = 5
+) -> list[dict] | None:
+
+    rag_results = service_repo.get_qna_by_embedding(
+        query_embedding=query_embedding,
+        match_count=match_count
+    )
+    
+    if not rag_results:
+        logger.error("Error calling RPC match_qna")
+        raise ExecError("Error calling RPC match_qna")
+    
+    qna_id_list = [item.get("qna_id") for item in rag_results]
+    data = service_repo.get_qna_by_ids(qna_id_list=qna_id_list)
     
     return data
 
@@ -123,7 +146,7 @@ def get_services_tool(
             match_count=5
         )
         
-        # logger.info(f"RAG results: {rag_results}")
+        logger.info(f"RAG results: {services}")
         
         if not services:
             logger.info("No results from RAG")
@@ -178,28 +201,28 @@ def get_qna_tool(
     try:
         query_embedding = embeddings_model.embed_query(query)
         
-        rag_results = service_repo.get_qna_by_embedding(
+        qnas = _get_qna_by_embedding(
             query_embedding=query_embedding,
             match_count=3
         )
 
-        if not rag_results:
-            logger.error("Error calling RPC match_qna")
+        if not qnas:
+            logger.error("No Q&A documents found from RAG")
             return Command(
                 update=build_update(
                     content="Sorry customer, an error occurred while searching for instructions.",
                     tool_call_id=tool_call_id
                 )
             ) 
-              
-        qna = [item.get("content") for item in rag_results]
         
-        logger.info(f"Found {len(qna)} Q&A documents")
+        logger.info(f"qna: {qnas}")
+        
+        logger.info(f"Found {len(qnas)} Q&A documents")
         return Command(
             update=build_update(
                 content=(
                     "Here is the information found related to the customer's question: \n"
-                    f"{qna}"
+                    f"{qnas}"
                 ),
                 tool_call_id=tool_call_id
             )

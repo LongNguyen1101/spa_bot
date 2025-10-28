@@ -135,14 +135,29 @@ class ServiceRepo:
         
         return response.data if response.data else None
     
-    def get_services_by_ids(self, 
-                            service_id_list: list[int]
+    def get_services_by_ids(
+        self, 
+        service_id_list: list[int]
     ) -> list[dict] | None:
         response = (
             self.supabase_client
             .table("services")
             .select("*, service_discounts(discount_value)")
             .in_("id", service_id_list)
+            .execute()
+        )
+        
+        return response.data if response.data else None
+    
+    def get_qna_by_ids(
+        self, 
+        qna_id_list: list[int]
+    ) -> list[dict] | None:
+        response = (
+            self.supabase_client
+            .table("qna")
+            .select("*")
+            .in_("id", qna_id_list)
             .execute()
         )
         
@@ -157,8 +172,7 @@ class ServiceRepo:
             "match_services_embedding",
             {
                 "query_embedding": query_embedding, 
-                "match_count": match_count,
-                "filter": {}
+                "match_count": match_count
             }
         ).execute()
         
@@ -167,8 +181,9 @@ class ServiceRepo:
 
         results = [
             {
+                "id": data["id"],
+                "service_id": data["service_id"],
                 "similarity": data["similarity"],
-                "content": json.loads(data['content'])
             }
             for data in response.data
         ]
@@ -185,7 +200,6 @@ class ServiceRepo:
             {
                 "query_embedding": query_embedding,
                 "match_count": match_count,
-                "filter": {}
             }
         ).execute()
         
@@ -194,8 +208,9 @@ class ServiceRepo:
 
         results = [
             {
+                "id": data["id"],
+                "qna_id": data["qna_id"],
                 "similarity": data["similarity"],
-                "content": json.loads(data['content'])
             }
             for data in response.data
         ]
